@@ -40,7 +40,12 @@ class JobDispatcher:
 
     def __init__(self, store: JobStore):
         self.store = store
-        self.scripts_dir = Path(settings.job_scripts_dir)
+        # Resolve scripts dir relative to project root (parent of src/)
+        scripts_dir = Path(settings.job_scripts_dir)
+        if not scripts_dir.is_absolute():
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            scripts_dir = project_root / scripts_dir
+        self.scripts_dir = scripts_dir
 
     def dispatch(self, app: str, parameters: dict, user: str, token: str) -> str:
         """Create a job and dispatch it.
