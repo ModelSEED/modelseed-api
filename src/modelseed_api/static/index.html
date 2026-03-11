@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ModelSEED API Demo</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+        header { background: #1a5276; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 20px; font-weight: 600; }
+        header .badge { background: #2ecc71; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+        header a { color: #d6eaf8; font-size: 13px; text-decoration: none; }
+        header a:hover { text-decoration: underline; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .login-bar { background: white; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.1); display: flex; gap: 12px; align-items: center; }
+        .login-bar input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: monospace; }
+        .login-bar button { padding: 8px 20px; background: #1a5276; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .login-bar button:hover { background: #1e6e9e; }
+        .login-bar .status { font-size: 13px; color: #888; }
+        .login-bar .status.ok { color: #2ecc71; }
+        .login-bar .status.err { color: #e74c3c; }
+        .tabs { display: flex; gap: 0; margin-bottom: 0; }
+        .tab { padding: 10px 20px; background: #e8edf2; border: 1px solid #ccc; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 14px; }
+        .tab.active { background: white; border-bottom: 1px solid white; font-weight: 600; }
+        .panel { background: white; border: 1px solid #ccc; border-radius: 0 8px 8px 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); min-height: 400px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 8px 10px; background: #f0f3f6; border-bottom: 2px solid #ddd; font-weight: 600; }
+        td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+        tr:hover td { background: #f8f9fb; }
+        tr.clickable { cursor: pointer; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: #f0f6fc; border-radius: 6px; padding: 12px; text-align: center; }
+        .stat-card .value { font-size: 24px; font-weight: 700; color: #1a5276; }
+        .stat-card .label { font-size: 12px; color: #666; margin-top: 2px; }
+        .breadcrumb { font-size: 13px; color: #888; margin-bottom: 12px; }
+        .breadcrumb a { color: #1a5276; cursor: pointer; text-decoration: underline; }
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .error { background: #fdf0ed; border: 1px solid #e74c3c; color: #c0392b; padding: 12px; border-radius: 6px; margin: 10px 0; }
+        .empty { text-align: center; padding: 40px; color: #aaa; }
+        .badge-sm { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+        .badge-green { background: #d5f5e3; color: #1e8449; }
+        .badge-orange { background: #fdebd0; color: #b9770e; }
+        .badge-blue { background: #d6eaf8; color: #21618c; }
+        .badge-red { background: #fadbd8; color: #c0392b; }
+        .badge-gray { background: #eee; color: #666; }
+        .back-btn { padding: 6px 14px; background: #eee; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px; margin-bottom: 12px; }
+        .back-btn:hover { background: #ddd; }
+        h3 { margin-bottom: 12px; font-size: 16px; }
+        .ws-path-bar, .search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+        .ws-path-bar input, .search-bar input, .search-bar select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 13px; }
+        .search-bar input { flex: 1; font-family: inherit; }
+        .search-bar select { font-family: inherit; }
+        .ws-path-bar input { flex: 1; }
+        .ws-path-bar button, .search-bar button { padding: 6px 14px; background: #1a5276; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px; background: white; }
+        .btn:hover { background: #f0f0f0; }
+        .btn-primary { background: #1a5276; color: white; border-color: #1a5276; }
+        .btn-primary:hover { background: #1e6e9e; }
+        .btn-success { background: #27ae60; color: white; border-color: #27ae60; }
+        .btn-success:hover { background: #2ecc71; }
+        .btn-warning { background: #f39c12; color: white; border-color: #f39c12; }
+        .btn-warning:hover { background: #e67e22; }
+        .btn-group { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+        .job-status { margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 13px; }
+        .job-status.queued { background: #eee; }
+        .job-status.running { background: #d6eaf8; }
+        .job-status.completed { background: #d5f5e3; }
+        .job-status.failed { background: #fadbd8; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+        .form-group input, .form-group select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; width: 100%; max-width: 400px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ModelSEED API</h1>
+        <span class="badge" id="health-badge">checking...</span>
+        <span style="flex:1"></span>
+        <a href="/docs" target="_blank">API Docs (Swagger)</a>
+        <span style="font-size:13px; opacity:.7">Demo Dashboard v0.2</span>
+    </header>
+
+    <div class="container">
+        <div class="login-bar">
+            <label style="font-weight:600; white-space:nowrap;">PATRIC Token:</label>
+            <input type="password" id="token-input" placeholder="un=username|tokenid=...|..." />
+            <button onclick="login()">Connect</button>
+            <span class="status" id="login-status"></span>
+        </div>
+
+        <div class="tabs" id="tab-bar">
+            <div class="tab active" onclick="switchTab('models')">My Models</div>
+            <div class="tab" onclick="switchTab('media')">Public Media</div>
+            <div class="tab" onclick="switchTab('biochem')">Biochemistry</div>
+            <div class="tab" onclick="switchTab('jobs')">Jobs</div>
+            <div class="tab" onclick="switchTab('workspace')">Workspace</div>
+        </div>
+
+        <div class="panel" id="panel">
+            <div class="empty">Enter your PATRIC token above to get started.</div>
+        </div>
+    </div>
+
+    <script>
+    const API = window.location.origin;
+    let TOKEN = '';
+    let USERNAME = '';
+    let currentTab = 'models';
+    let modelsCache = [];
+    let jobPollTimer = null;
+
+    // Tab names in order
+    const TAB_NAMES = ['models', 'media', 'biochem', 'jobs', 'workspace'];
+
+    // Check API health on load
+    fetch(API + '/api/health').then(r => r.json()).then(d => {
+        const b = document.getElementById('health-badge');
+        b.textContent = d.status === 'ok' ? 'API Online' : 'API Error';
+        b.style.background = d.status === 'ok' ? '#2ecc71' : '#e74c3c';
+    }).catch(() => {
+        const b = document.getElementById('health-badge');
+        b.textContent = 'API Offline';
+        b.style.background = '#e74c3c';
+    });
+
+    // Also load biochem stats (no auth needed)
+    let biochemStats = null;
+    fetch(API + '/api/biochem/stats').then(r => r.json()).then(d => { biochemStats = d; }).catch(() => {});
+
+    async function apiFetch(path, opts = {}) {
+        const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+        if (TOKEN) headers['Authorization'] = TOKEN;
+        const resp = await fetch(API + path, { ...opts, headers });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+            throw new Error(err.detail || resp.statusText);
+        }
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('xml') || ct.includes('text')) return resp.text();
+        return resp.json();
+    }
+
+    async function apiPost(path, body) {
+        return apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
+    }
+
+    function login() {
+        TOKEN = document.getElementById('token-input').value.trim();
+        if (!TOKEN) return;
+        const parts = TOKEN.split('|');
+        for (const p of parts) {
+            if (p.startsWith('un=')) { USERNAME = p.substring(3); break; }
+        }
+        const st = document.getElementById('login-status');
+        st.textContent = 'Connecting...';
+        st.className = 'status';
+        apiFetch('/api/models').then(models => {
+            modelsCache = models;
+            st.textContent = `Connected as ${USERNAME} (${models.length} models)`;
+            st.className = 'status ok';
+            renderModels(models);
+        }).catch(err => {
+            st.textContent = 'Error: ' + err.message;
+            st.className = 'status err';
+        });
+    }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.tab').forEach((t, i) => {
+            t.className = 'tab' + (TAB_NAMES[i] === tab ? ' active' : '');
+        });
+        if (tab === 'biochem') { renderBiochem(); return; }
+        if (!TOKEN && tab !== 'biochem') {
+            panel('empty', 'Enter your PATRIC token above to get started.');
+            return;
+        }
+        if (tab === 'models') renderModels(modelsCache);
+        else if (tab === 'media') loadMedia();
+        else if (tab === 'jobs') renderJobs();
+        else if (tab === 'workspace') renderWorkspace();
+    }
+
+    function panel(type, content) {
+        const p = document.getElementById('panel');
+        if (type === 'html') p.innerHTML = content;
+        else if (type === 'loading') p.innerHTML = '<div class="loading">' + content + '</div>';
+        else if (type === 'error') p.innerHTML = '<div class="error">' + content + '</div>';
+        else if (type === 'empty') p.innerHTML = '<div class="empty">' + content + '</div>';
+    }
+
+    // ==================== MODELS TAB ====================
+
+    function renderModels(models) {
+        if (!models.length) { panel('empty', 'No models found.'); return; }
+        let html = `
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="showBuildModelForm()">Build New Model</button>
+            </div>
+            <table><tr><th>Name</th><th>Source ID</th><th>Type</th><th>Reactions</th><th>Compounds</th><th>Genes</th><th>Gapfills</th><th>FBA</th></tr>`;
+        for (const m of models) {
+            html += `<tr class="clickable" onclick="loadModel('${m.ref}')">
+                <td><strong>${esc(m.name)}</strong></td>
+                <td>${esc(m.source_id||'')}</td>
+                <td><span class="badge-sm badge-blue">${esc(m.type||'')}</span></td>
+                <td>${m.num_reactions}</td>
+                <td>${m.num_compounds}</td>
+                <td>${m.num_genes}</td>
+                <td>${m.integrated_gapfills} <span style="color:#aaa">/ ${m.unintegrated_gapfills||0}</span></td>
+                <td>${m.fba_count}</td>
+            </tr>`;
+        }
+        html += '</table>';
+        panel('html', html);
+    }
+
+    function showBuildModelForm() {
+        let html = `
+            <div class="breadcrumb"><a onclick="renderModels(modelsCache)">My Models</a> &gt; Build New Model</div>
+            <button class="back-btn" onclick="renderModels(modelsCache)">&larr; Back</button>
+            <h3>Build Metabolic Model</h3>
+            <div class="form-group">
+                <label>BV-BRC Genome ID:</label>
+                <input type="text" id="build-genome" placeholder="e.g., 1581061.3" />
+            </div>
+            <div class="form-group">
+                <label>Template:</label>
+                <select id="build-template">
+                    <option value="auto">Auto-detect (classify genome)</option>
+                    <option value="gn">Gram Negative</option>
+                    <option value="gp">Gram Positive</option>
+                </select>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-success" onclick="submitBuildModel()">Build Model</button>
+            </div>
+            <div id="build-status"></div>
+        `;
+        panel('html', html);
+    }
+
+    async function submitBuildModel() {
+        const genome = document.getElementById('build-genome').value.trim();
+        if (!genome) { alert('Enter a genome ID'); return; }
+        const template = document.getElementById('build-template').value;
+        const statusEl = document.getElementById('build-status');
+        statusEl.innerHTML = '<div class="job-status queued">Submitting job...</div>';
+        try {
+            const jobId = await apiPost('/api/jobs/reconstruct', { genome });
+            statusEl.innerHTML = `<div class="job-status running">Job submitted: ${jobId}<br>Check the Jobs tab for status.</div>`;
+        } catch (err) {
+            statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;
+        }
+    }
+
+    async function loadModel(ref) {
+        panel('loading', 'Loading model data from workspace...');
+        try {
+            const [data, gapfills, fbas] = await Promise.all([
+                apiFetch('/api/models/data?ref=' + encodeURIComponent(ref)),
+                apiFetch('/api/models/gapfills?ref=' + encodeURIComponent(ref)),
+                apiFetch('/api/models/fba?ref=' + encodeURIComponent(ref)).catch(() => []),
+            ]);
+
+            const modelName = ref.split('/').pop();
+            let html = `
+                <div class="breadcrumb"><a onclick="renderModels(modelsCache)">My Models</a> &gt; ${esc(modelName)}</div>
+                <button class="back-btn" onclick="renderModels(modelsCache)">&larr; Back to Models</button>
+
+                <div class="stats">
+                    <div class="stat-card"><div class="value">${data.reactions.length}</div><div class="label">Reactions</div></div>
+                    <div class="stat-card"><div class="value">${data.compounds.length}</div><div class="label">Compounds</div></div>
+                    <div class="stat-card"><div class="value">${data.genes.length}</div><div class="label">Genes</div></div>
+                    <div class="stat-card"><div class="value">${data.compartments.length}</div><div class="label">Compartments</div></div>
+                    <div class="stat-card"><div class="value">${data.biomasses.length}</div><div class="label">Biomasses</div></div>
+                    <div class="stat-card"><div class="value">${gapfills.length}</div><div class="label">Gapfills</div></div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="exportModel('${esc(ref)}', 'json')">Export JSON</button>
+                    <button class="btn btn-primary" onclick="exportModel('${esc(ref)}', 'sbml')">Export SBML</button>
+                    <button class="btn btn-primary" onclick="exportModel('${esc(ref)}', 'cobra-json')">Export CobraPy JSON</button>
+                    <button class="btn btn-warning" onclick="submitGapfill('${esc(ref)}')">Run Gapfill</button>
+                    <button class="btn btn-success" onclick="submitFBA('${esc(ref)}')">Run FBA</button>
+                </div>
+                <div id="model-action-status"></div>
+
+                <h3>Reactions (first 50)</h3>
+                <table>
+                    <tr><th>ID</th><th>Name</th><th>Direction</th><th>Genes</th></tr>
+            `;
+            for (const r of data.reactions.slice(0, 50)) {
+                html += `<tr>
+                    <td><code>${esc(r.id)}</code></td>
+                    <td>${esc(r.name)}</td>
+                    <td>${esc(r.direction)}</td>
+                    <td>${r.genes.length > 0 ? r.genes.length + ' genes' : '<span style="color:#ccc">-</span>'}</td>
+                </tr>`;
+            }
+            html += '</table>';
+
+            if (gapfills.length > 0) {
+                html += '<h3 style="margin-top:20px">Gapfill Solutions</h3><table><tr><th>ID</th><th>Media</th><th>Integrated</th><th>Solutions</th></tr>';
+                for (const gf of gapfills) {
+                    const mediaName = gf.media_ref ? gf.media_ref.split('/').pop() : 'Complete';
+                    html += `<tr>
+                        <td>${esc(gf.id)}</td>
+                        <td>${esc(mediaName)}</td>
+                        <td>${gf.integrated ? '<span class="badge-sm badge-green">Yes</span>' : '<span class="badge-sm badge-orange">No</span>'}</td>
+                        <td>${gf.solution_reactions ? gf.solution_reactions.length : 0} solutions</td>
+                    </tr>`;
+                }
+                html += '</table>';
+            }
+
+            if (fbas.length > 0) {
+                html += '<h3 style="margin-top:20px">FBA Studies</h3><table><tr><th>ID</th><th>Media</th><th>Objective</th></tr>';
+                for (const f of fbas) {
+                    const mediaName = f.media_ref ? f.media_ref.split('/').pop() : 'Complete';
+                    html += `<tr>
+                        <td>${esc(f.id)}</td>
+                        <td>${esc(mediaName)}</td>
+                        <td>${f.objective != null ? f.objective.toFixed(4) : '-'}</td>
+                    </tr>`;
+                }
+                html += '</table>';
+            }
+
+            panel('html', html);
+        } catch (err) {
+            panel('error', 'Failed to load model: ' + err.message);
+        }
+    }
+
+    async function exportModel(ref, format) {
+        const statusEl = document.getElementById('model-action-status');
+        statusEl.innerHTML = '<div class="job-status running">Exporting as ' + format + '...</div>';
+        try {
+            const url = API + '/api/models/export?ref=' + encodeURIComponent(ref) + '&format=' + format;
+            const resp = await fetch(url, { headers: { 'Authorization': TOKEN } });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+                throw new Error(err.detail || resp.statusText);
+            }
+            const ct = resp.headers.get('content-type') || '';
+            const modelName = ref.split('/').pop();
+            if (ct.includes('xml')) {
+                const text = await resp.text();
+                downloadFile(text, modelName + '.xml', 'application/xml');
+                statusEl.innerHTML = '<div class="job-status completed">SBML file downloaded!</div>';
+            } else {
+                const data = await resp.json();
+                downloadFile(JSON.stringify(data, null, 2), modelName + '.' + format + '.json', 'application/json');
+                statusEl.innerHTML = '<div class="job-status completed">JSON file downloaded!</div>';
+            }
+        } catch (err) {
+            statusEl.innerHTML = '<div class="job-status failed">Export error: ' + err.message + '</div>';
+        }
+    }
+
+    function downloadFile(content, filename, type) {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    async function submitGapfill(ref) {
+        const statusEl = document.getElementById('model-action-status');
+        statusEl.innerHTML = '<div class="job-status queued">Submitting gapfill job...</div>';
+        try {
+            const jobId = await apiPost('/api/jobs/gapfill', { model: ref });
+            statusEl.innerHTML = `<div class="job-status running">Gapfill job submitted: ${jobId}<br>Check the Jobs tab for progress.</div>`;
+        } catch (err) {
+            statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;
+        }
+    }
+
+    async function submitFBA(ref) {
+        const statusEl = document.getElementById('model-action-status');
+        statusEl.innerHTML = '<div class="job-status queued">Submitting FBA job...</div>';
+        try {
+            const jobId = await apiPost('/api/jobs/fba', { model: ref });
+            statusEl.innerHTML = `<div class="job-status running">FBA job submitted: ${jobId}<br>Check the Jobs tab for progress.</div>`;
+        } catch (err) {
+            statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;
+        }
+    }
+
+    // ==================== MEDIA TAB ====================
+
+    async function loadMedia() {
+        panel('loading', 'Loading public media library...');
+        try {
+            const raw = await apiFetch('/api/media/public');
+            const items = raw[Object.keys(raw)[0]] || [];
+            let html = '<h3>Public Media Library (' + items.length + ' media)</h3>';
+            html += '<table><tr><th>Name</th><th>Type</th><th>Path</th></tr>';
+            for (const m of items.slice(0, 100)) {
+                html += `<tr><td>${esc(m[0])}</td><td>${esc(m[1])}</td><td style="font-size:11px;color:#888">${esc(m[2] + m[0])}</td></tr>`;
+            }
+            if (items.length > 100) html += `<tr><td colspan="3" style="text-align:center;color:#888">...and ${items.length - 100} more</td></tr>`;
+            html += '</table>';
+            panel('html', html);
+        } catch (err) {
+            panel('error', 'Failed to load media: ' + err.message);
+        }
+    }
+
+    // ==================== BIOCHEM TAB ====================
+
+    function renderBiochem() {
+        let statsHtml = '';
+        if (biochemStats) {
+            statsHtml = `
+                <div class="stats" style="margin-bottom:16px">
+                    <div class="stat-card"><div class="value">${biochemStats.total_compounds?.toLocaleString() || '?'}</div><div class="label">Compounds</div></div>
+                    <div class="stat-card"><div class="value">${biochemStats.total_reactions?.toLocaleString() || '?'}</div><div class="label">Reactions</div></div>
+                </div>
+            `;
+        }
+        let html = `
+            <h3>Biochemistry Database</h3>
+            ${statsHtml}
+            <div class="search-bar">
+                <input type="text" id="biochem-query" placeholder="Search compounds or reactions (e.g., pyruvate, rxn00001)..." onkeydown="if(event.key==='Enter')searchBiochem()" />
+                <select id="biochem-type">
+                    <option value="compounds">Compounds</option>
+                    <option value="reactions">Reactions</option>
+                </select>
+                <button onclick="searchBiochem()">Search</button>
+            </div>
+            <div id="biochem-results"><div class="empty">Enter a search term to find compounds or reactions</div></div>
+        `;
+        panel('html', html);
+    }
+
+    async function searchBiochem() {
+        const query = document.getElementById('biochem-query').value.trim();
+        const type = document.getElementById('biochem-type').value;
+        if (!query) return;
+        const results = document.getElementById('biochem-results');
+        results.innerHTML = '<div class="loading">Searching...</div>';
+        try {
+            const data = await apiFetch(`/api/biochem/search?query=${encodeURIComponent(query)}&type=${type}&limit=50`);
+            if (!data.length) {
+                results.innerHTML = '<div class="empty">No results found</div>';
+                return;
+            }
+            let html = `<p style="margin-bottom:8px;font-size:13px;color:#888">${data.length} result(s)</p>`;
+            if (type === 'compounds') {
+                html += '<table><tr><th>ID</th><th>Name</th><th>Formula</th><th>Charge</th><th>Mass</th><th>Delta G</th></tr>';
+                for (const c of data) {
+                    html += `<tr>
+                        <td><code>${esc(c.id)}</code></td>
+                        <td>${esc(c.name)}</td>
+                        <td>${esc(c.formula||'')}</td>
+                        <td>${c.charge != null ? c.charge : '-'}</td>
+                        <td>${c.mass != null ? c.mass : '-'}</td>
+                        <td>${c.deltag != null ? Number(c.deltag).toFixed(2) : '-'}</td>
+                    </tr>`;
+                }
+            } else {
+                html += '<table><tr><th>ID</th><th>Name</th><th>Equation</th><th>Direction</th><th>Delta G</th><th>Status</th></tr>';
+                for (const r of data) {
+                    html += `<tr>
+                        <td><code>${esc(r.id)}</code></td>
+                        <td>${esc(r.name)}</td>
+                        <td style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.equation||r.definition||'')}</td>
+                        <td>${esc(r.direction||'')}</td>
+                        <td>${r.deltag != null ? Number(r.deltag).toFixed(2) : '-'}</td>
+                        <td>${esc(r.status||'')}</td>
+                    </tr>`;
+                }
+            }
+            html += '</table>';
+            results.innerHTML = html;
+        } catch (err) {
+            results.innerHTML = '<div class="error">' + err.message + '</div>';
+        }
+    }
+
+    // ==================== JOBS TAB ====================
+
+    function renderJobs() {
+        let html = `
+            <h3>Job Status</h3>
+            <div class="btn-group">
+                <button class="btn" onclick="refreshJobs()">Refresh</button>
+                <button class="btn btn-primary" onclick="showBuildModelForm()">Build Model</button>
+            </div>
+            <div id="jobs-list"><div class="loading">Loading jobs...</div></div>
+        `;
+        panel('html', html);
+        refreshJobs();
+    }
+
+    async function refreshJobs() {
+        const container = document.getElementById('jobs-list');
+        if (!container) return;
+        try {
+            const jobs = await apiFetch('/api/jobs');
+            const jobList = Object.values(jobs);
+            if (!jobList.length) {
+                container.innerHTML = '<div class="empty">No jobs found. Use Build Model, Run Gapfill, or Run FBA to create jobs.</div>';
+                return;
+            }
+            // Sort by submit_time descending
+            jobList.sort((a, b) => (b.submit_time || '').localeCompare(a.submit_time || ''));
+            let html = '<table><tr><th>ID</th><th>App</th><th>Status</th><th>Submitted</th><th>Started</th><th>Completed</th><th>Error</th></tr>';
+            for (const j of jobList) {
+                const statusClass = j.status === 'completed' ? 'badge-green' :
+                                   j.status === 'failed' ? 'badge-red' :
+                                   j.status === 'in-progress' ? 'badge-blue' : 'badge-gray';
+                html += `<tr>
+                    <td style="font-family:monospace;font-size:11px">${esc(j.id?.substring(0,8))}...</td>
+                    <td>${esc(j.app)}</td>
+                    <td><span class="badge-sm ${statusClass}">${esc(j.status)}</span></td>
+                    <td style="font-size:12px">${esc(j.submit_time||'-')}</td>
+                    <td style="font-size:12px">${esc(j.start_time||'-')}</td>
+                    <td style="font-size:12px">${esc(j.completed_time||'-')}</td>
+                    <td style="font-size:11px;color:#c0392b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(j.error||'')}</td>
+                </tr>`;
+            }
+            html += '</table>';
+            container.innerHTML = html;
+
+            // Auto-poll if there are running/queued jobs
+            const hasActive = jobList.some(j => j.status === 'queued' || j.status === 'in-progress');
+            if (hasActive && currentTab === 'jobs') {
+                clearTimeout(jobPollTimer);
+                jobPollTimer = setTimeout(refreshJobs, 4000);
+            }
+        } catch (err) {
+            container.innerHTML = '<div class="error">' + err.message + '</div>';
+        }
+    }
+
+    // ==================== WORKSPACE TAB ====================
+
+    function renderWorkspace() {
+        const defaultPath = USERNAME ? '/' + USERNAME + '/' : '/';
+        let html = `
+            <h3>Workspace Browser</h3>
+            <div class="ws-path-bar">
+                <input type="text" id="ws-path" value="${esc(defaultPath)}" />
+                <button onclick="browseWS()">Browse</button>
+            </div>
+            <div id="ws-contents"><div class="empty">Enter a path and click Browse</div></div>
+        `;
+        panel('html', html);
+    }
+
+    async function browseWS(path) {
+        if (!path) path = document.getElementById('ws-path').value.trim();
+        document.getElementById('ws-path').value = path;
+        const cont = document.getElementById('ws-contents');
+        cont.innerHTML = '<div class="loading">Loading...</div>';
+        try {
+            const data = await apiPost('/api/workspace/ls', { paths: [path] });
+            const items = data[path] || data[Object.keys(data)[0]] || [];
+            if (!items.length) {
+                cont.innerHTML = '<div class="empty">Empty directory</div>';
+                return;
+            }
+            let html = '<table><tr><th>Name</th><th>Type</th><th>Size</th><th>Created</th></tr>';
+            for (const item of items) {
+                const isDir = item[1] === 'folder' || item[1] === 'modelfolder';
+                const clickPath = (item[2] + item[0] + '/').replace(/\/+/g, '/');
+                const onclick = isDir ? `onclick="browseWS('${esc(clickPath)}')" class="clickable"` : '';
+                html += `<tr ${onclick}>
+                    <td>${isDir ? '&#128193; ' : '&#128196; '}<strong>${esc(item[0])}</strong></td>
+                    <td><span class="badge-sm badge-blue">${esc(item[1])}</span></td>
+                    <td>${item[6] || '-'}</td>
+                    <td style="font-size:12px;color:#888">${esc(item[3] || '')}</td>
+                </tr>`;
+            }
+            html += '</table>';
+            cont.innerHTML = html;
+        } catch (err) {
+            cont.innerHTML = '<div class="error">' + err.message + '</div>';
+        }
+    }
+
+    // ==================== UTIL ====================
+
+    function esc(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    </script>
+</body>
+</html>
