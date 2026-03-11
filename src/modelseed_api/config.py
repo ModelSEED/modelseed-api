@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # Local data paths
     modelseed_db_path: str = "/Users/jplfaria/repos/ModelSEEDDatabase"
     templates_path: str = "/Users/jplfaria/repos/ModelSEEDTemplates/templates/v7.0"
+    cb_annotation_ontology_api_path: str = "/Users/jplfaria/repos/cb_annotation_ontology_api"
 
     # Job scripts (subprocess fallback for local dev)
     job_scripts_dir: str = "src/job_scripts"

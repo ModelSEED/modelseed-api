@@ -71,7 +71,12 @@ async def reconstruct_model(
     """
     job_id = _dispatcher.dispatch(
         app="ModelReconstruction",
-        parameters={"genome": request.genome},
+        parameters={
+            "genome": request.genome,
+            "template_type": request.template_type,
+            "atp_safe": request.atp_safe,
+            "output_path": request.output_path,
+        },
         user=user.username,
         token=user.token,
     )
@@ -89,7 +94,11 @@ async def gapfill_model(
     """
     job_id = _dispatcher.dispatch(
         app="GapfillModel",
-        parameters={"model": request.model},
+        parameters={
+            "model": request.model,
+            "template_type": request.template_type,
+            "media": request.media,
+        },
         user=user.username,
         token=user.token,
     )

@@ -1,7 +1,14 @@
 """Model reconstruction job script.
 
-This script runs outside the API service process.
-It uses KBUtilLib/ModelSEEDpy to build a metabolic model from a genome.
+Runs outside the API service process.
+Uses KBUtilLib/ModelSEEDpy to build a metabolic model from a BV-BRC genome.
+
+Pipeline:
+  1. Fetch genome from BV-BRC API via BVBRCUtils
+  2. Convert to MSGenome via KBaseObjectFactory
+  3. Load templates from local ModelSEEDTemplates repo
+  4. Build model via MSReconstructionUtils.build_metabolic_model()
+  5. Save model to PATRIC workspace
 
 Usage:
     python reconstruct.py --job-id <id> --token <token> --params <json> --job-store-dir <dir>
@@ -9,8 +16,18 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def update_job(job_file, updates):
+    """Update job JSON file with new fields."""
+    if job_file.exists():
+        job = json.loads(job_file.read_text())
+        job.update(updates)
+        job_file.write_text(json.dumps(job, indent=2))
 
 
 def main():
@@ -23,39 +40,140 @@ def main():
 
     store_dir = Path(args.job_store_dir)
     job_file = store_dir / f"{args.job_id}.json"
+    now = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
 
-    # Mark as in-progress
-    if job_file.exists():
-        job = json.loads(job_file.read_text())
-        job["status"] = "in-progress"
-        from datetime import datetime, timezone
-
-        job["start_time"] = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
-        job_file.write_text(json.dumps(job, indent=2))
+    update_job(job_file, {"status": "in-progress", "start_time": now()})
 
     params = json.loads(args.params)
+    genome_id = params.get("genome", "")
+    template_type = params.get("template_type", "gn")
+    atp_safe = params.get("atp_safe", True)
+    output_path = params.get("output_path")
 
     try:
-        # TODO: Import and use MSReconstructionUtils here
-        # from kbutillib.ms_reconstruction_utils import MSReconstructionUtils
-        # recon = MSReconstructionUtils(token={"patric": args.token})
-        # recon.build_metabolic_model(genome_ref=params["genome"])
+        # Add project root to path for imports
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from modelseed_api.config import settings
 
-        raise NotImplementedError(
-            "Model reconstruction not yet integrated with KBUtilLib. "
-            "This script needs MSReconstructionUtils to be connected."
+        # Set up environment for KBUtilLib
+        os.environ.setdefault("KB_AUTH_TOKEN", "unused")
+
+        from kbutillib import BVBRCUtils, MSReconstructionUtils
+
+        # Patch BVBRCUtils.save (debug method from KBase SDK context)
+        BVBRCUtils.save = lambda self, name, obj: None
+
+        init_kwargs = dict(
+            config_file=False,
+            token_file=None,
+            kbase_token_file=None,
+            token={"patric": args.token, "kbase": "unused"},
+            modelseed_path=settings.modelseed_db_path,
+            cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
         )
 
-    except Exception as e:
-        # Mark as failed
-        if job_file.exists():
-            job = json.loads(job_file.read_text())
-            job["status"] = "failed"
-            job["error"] = str(e)
-            from datetime import datetime, timezone
+        # Step 1: Fetch genome from BV-BRC API
+        update_job(job_file, {"status": "in-progress", "progress": "Fetching genome..."})
+        bvbrc = BVBRCUtils(**init_kwargs)
+        kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
 
-            job["completed_time"] = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
-            job_file.write_text(json.dumps(job, indent=2))
+        # Step 2: Convert to MSGenome
+        update_job(job_file, {"progress": "Converting genome..."})
+        recon = MSReconstructionUtils(**init_kwargs)
+        genome = recon.get_msgenome_from_dict(kbase_genome)
+
+        # Step 3: Load templates from local files
+        update_job(job_file, {"progress": "Loading templates..."})
+        from modelseedpy import MSTemplateBuilder
+
+        templates_dir = settings.templates_path
+        with open(f"{templates_dir}/Core-V6.json") as f:
+            core_template = MSTemplateBuilder.from_dict(json.load(f)).build()
+
+        template_files = {
+            "gn": "GramNegModelTemplateV7.json",
+            "gp": "GramPosModelTemplateV7.json",
+            "gramneg": "GramNegModelTemplateV7.json",
+            "grampos": "GramPosModelTemplateV7.json",
+        }
+        gs_filename = template_files.get(template_type, "GramNegModelTemplateV7.json")
+        with open(f"{templates_dir}/{gs_filename}") as f:
+            gs_template = MSTemplateBuilder.from_dict(json.load(f)).build()
+
+        # Templates loaded from local files don't have .info — add mock
+        class _Info:
+            def __init__(self, n):
+                self.name = n
+            def __str__(self):
+                return self.name
+        core_template.info = _Info("Core-V6")
+        gs_template.info = _Info(gs_filename.replace(".json", ""))
+
+        # Step 4: Build model
+        update_job(job_file, {"progress": "Building model..."})
+        output, mdlutl = recon.build_metabolic_model(
+            genome=genome,
+            genome_classifier=None,
+            core_template=core_template,
+            gs_template_obj=gs_template,
+            gs_template=template_type,
+            atp_safe=atp_safe,
+        )
+
+        if mdlutl is None:
+            update_job(job_file, {
+                "status": "completed",
+                "completed_time": now(),
+                "result": {
+                    "status": "skipped",
+                    "comments": output.get("Comments", []),
+                },
+            })
+            print(f"Reconstruction skipped: {output.get('Comments')}")
+            return
+
+        # Step 5: Save model to PATRIC workspace
+        if output_path:
+            update_job(job_file, {"progress": "Saving to workspace..."})
+            from modelseed_api.services.workspace_service import WorkspaceService
+            ws = WorkspaceService(args.token)
+            # Save the cobra model as workspace JSON
+            model_data = mdlutl.model.to_json()
+            ws.create({
+                "objects": [[
+                    f"{output_path}/model",
+                    "modelfolder",
+                    {},
+                    model_data,
+                ]]
+            })
+
+        result_data = {
+            "status": "success",
+            "genome_id": genome_id,
+            "reactions": output.get("Reactions", len(mdlutl.model.reactions)),
+            "metabolites": len(mdlutl.model.metabolites),
+            "genes": output.get("Model genes", len(mdlutl.model.genes)),
+            "classification": output.get("Class", template_type),
+            "core_gapfilling": output.get("Core GF", "NA"),
+        }
+
+        update_job(job_file, {
+            "status": "completed",
+            "completed_time": now(),
+            "result": result_data,
+        })
+
+        print(f"Reconstruction completed: {result_data['reactions']} reactions, "
+              f"{result_data['genes']} genes, class={result_data['classification']}")
+
+    except Exception as e:
+        update_job(job_file, {
+            "status": "failed",
+            "error": str(e),
+            "completed_time": now(),
+        })
+        print(f"Reconstruction failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 

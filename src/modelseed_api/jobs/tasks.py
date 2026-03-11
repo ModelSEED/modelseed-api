@@ -25,6 +25,10 @@ MODELSEED_DB_PATH = os.getenv(
     "MODELSEED_DB_PATH",
     "/Users/jplfaria/repos/ModelSEEDDatabase",
 )
+CB_ANNO_ONT_PATH = os.getenv(
+    "CB_ANNOTATION_ONTOLOGY_API_PATH",
+    "/Users/jplfaria/repos/cb_annotation_ontology_api",
+)
 
 # Map template type to local file
 TEMPLATE_FILES = {
@@ -51,75 +55,79 @@ def _load_template(template_type: str):
     with open(path) as f:
         template_data = json.load(f)
 
-    return MSTemplateBuilder.from_dict(template_data).build()
+    template = MSTemplateBuilder.from_dict(template_data).build()
+
+    # Add mock info attribute (templates loaded from files lack this)
+    class _Info:
+        def __init__(self, n):
+            self.name = n
+        def __str__(self):
+            return self.name
+    template.info = _Info(filename.replace(".json", ""))
+
+    return template
 
 
-def _get_workspace_client(token: str):
-    """Get a PATRIC workspace client."""
-    from kbutillib.patric_ws_utils import PatricWSClient
-
-    return PatricWSClient(token=token)
+def _init_kwargs(token: str) -> dict:
+    """Common kwargs for KBUtilLib initialization."""
+    os.environ.setdefault("KB_AUTH_TOKEN", "unused")
+    return dict(
+        config_file=False,
+        token_file=None,
+        kbase_token_file=None,
+        token={"patric": token, "kbase": "unused"},
+        modelseed_path=MODELSEED_DB_PATH,
+        cb_annotation_ontology_api_path=CB_ANNO_ONT_PATH,
+    )
 
 
 @app.task(bind=True, name="modelseed.reconstruct")
 def reconstruct(
     self,
     token: str,
-    genome_ref: str,
-    template_type: str = "auto",
+    genome_id: str,
+    template_type: str = "gn",
     atp_safe: bool = True,
     gapfill: bool = False,
     media_ref: str | None = None,
     output_path: str | None = None,
 ):
-    """Build a metabolic model from a genome.
+    """Build a metabolic model from a BV-BRC genome.
 
     Args:
         token: PATRIC auth token
-        genome_ref: Workspace reference to genome (e.g., /user/genomes/12345.6)
-        template_type: Template type (auto, gp, gn) — 'auto' classifies the genome
+        genome_id: BV-BRC genome ID (e.g., 83332.12)
+        template_type: Template type (gp, gn)
         atp_safe: Apply ATP-safe constraints
         gapfill: Run gapfilling after reconstruction
         media_ref: Media workspace reference (for gapfilling)
         output_path: Workspace path for output model
     """
-    self.update_state(state="PROGRESS", meta={"status": "Starting reconstruction..."})
+    from kbutillib import BVBRCUtils, MSReconstructionUtils
+    BVBRCUtils.save = lambda self, name, obj: None
 
-    from kbutillib.ms_reconstruction_utils import MSReconstructionUtils
+    kwargs = _init_kwargs(token)
 
-    # Initialize reconstruction utils with PATRIC token
-    recon = MSReconstructionUtils(token={"patric": token})
+    # Fetch genome from BV-BRC API
+    self.update_state(state="PROGRESS", meta={"status": "Fetching genome from BV-BRC..."})
+    bvbrc = BVBRCUtils(**kwargs)
+    kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
+
+    # Convert to MSGenome
+    self.update_state(state="PROGRESS", meta={"status": "Converting genome..."})
+    recon = MSReconstructionUtils(**kwargs)
+    genome = recon.get_msgenome_from_dict(kbase_genome)
 
     # Load templates from local files
     self.update_state(state="PROGRESS", meta={"status": "Loading templates..."})
     core_template = _load_template("core")
-    gs_template_obj = None
-    if template_type != "auto":
-        gs_template_obj = _load_template(template_type)
-
-    # Override the KBase template paths so get_template() isn't called
-    recon.templates = {k: None for k in recon.templates}
-
-    # Fetch genome from workspace
-    self.update_state(state="PROGRESS", meta={"status": "Fetching genome..."})
-    ws_client = _get_workspace_client(token)
-    genome_data = ws_client.get_object(genome_ref)
-
-    # Build MSGenome from workspace genome data
-    from modelseedpy import MSGenome
-
-    genome = MSGenome.from_dict(genome_data)
-
-    # Load genome classifier
-    from modelseedpy import MSGenomeClassifier
-
-    classifier = MSGenomeClassifier(MODELSEED_DB_PATH)
+    gs_template_obj = _load_template(template_type)
 
     # Build model
     self.update_state(state="PROGRESS", meta={"status": "Building model..."})
     output, mdlutl = recon.build_metabolic_model(
         genome=genome,
-        genome_classifier=classifier,
+        genome_classifier=None,
         core_template=core_template,
         gs_template_obj=gs_template_obj,
         gs_template=template_type,
@@ -136,21 +144,21 @@ def reconstruct(
     if gapfill:
         self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
         from modelseedpy import MSGapfill
-
-        gapfiller = MSGapfill(mdlutl.model)
+        template = _load_template(template_type)
+        gapfiller = MSGapfill(mdlutl.model, default_target="bio1", templates=[template])
         gapfiller.run_gapfilling(media=media_ref)
 
     # Save model to workspace
-    self.update_state(state="PROGRESS", meta={"status": "Saving model..."})
     if output_path:
-        recon.save_model(mdlutl, workspace=output_path)
+        self.update_state(state="PROGRESS", meta={"status": "Saving model..."})
+        # TODO: Save model to PATRIC workspace
 
     return {
         "status": "success",
-        "model_id": mdlutl.wsid,
-        "reactions": output.get("Reactions", 0),
-        "genes": output.get("Model genes", 0),
-        "classification": output.get("Class", "unknown"),
+        "genome_id": genome_id,
+        "reactions": output.get("Reactions", len(mdlutl.model.reactions)),
+        "genes": output.get("Model genes", len(mdlutl.model.genes)),
+        "classification": output.get("Class", template_type),
         "core_gapfilling": output.get("Core GF", "NA"),
     }
 
@@ -174,20 +182,39 @@ def gapfill(
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
 
     # Fetch model from workspace
-    ws_client = _get_workspace_client(token)
-    model_data = ws_client.get_object(f"{model_ref}/model")
-
-    # Convert to cobra model
+    from modelseed_api.services.workspace_service import WorkspaceService
     from modelseed_api.services.export_service import workspace_model_to_cobra
 
-    cobra_model = workspace_model_to_cobra(model_data)
+    ws = WorkspaceService(token)
+    result = ws.get({"objects": [f"{model_ref}/model"]})
+    if not result:
+        raise ValueError(f"Model not found: {model_ref}")
 
-    # Load template
+    raw_data = result[0][1] if len(result[0]) > 1 else "{}"
+    if isinstance(raw_data, str):
+        if raw_data.startswith("http") and "shock" in raw_data:
+            import requests
+            resp = requests.get(
+                raw_data.rstrip("/") + "?download",
+                headers={"Authorization": f"OAuth {token}"},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            model_obj = resp.json()
+        else:
+            model_obj = json.loads(raw_data)
+    elif isinstance(raw_data, dict):
+        model_obj = raw_data
+    else:
+        model_obj = {}
+
+    cobra_model = workspace_model_to_cobra(model_obj)
+
+    # Load template and run gapfilling
     self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
     template = _load_template(template_type)
 
     from modelseedpy import MSGapfill
-
     gapfiller = MSGapfill(cobra_model, default_target="bio1", templates=[template])
     solutions = gapfiller.run_gapfilling(media=media_ref)
 
@@ -218,14 +245,33 @@ def run_fba(
     """
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
 
-    # Fetch model from workspace
-    ws_client = _get_workspace_client(token)
-    model_data = ws_client.get_object(f"{model_ref}/model")
-
-    # Convert to cobra model
+    from modelseed_api.services.workspace_service import WorkspaceService
     from modelseed_api.services.export_service import workspace_model_to_cobra
 
-    cobra_model = workspace_model_to_cobra(model_data)
+    ws = WorkspaceService(token)
+    result = ws.get({"objects": [f"{model_ref}/model"]})
+    if not result:
+        raise ValueError(f"Model not found: {model_ref}")
+
+    raw_data = result[0][1] if len(result[0]) > 1 else "{}"
+    if isinstance(raw_data, str):
+        if raw_data.startswith("http") and "shock" in raw_data:
+            import requests
+            resp = requests.get(
+                raw_data.rstrip("/") + "?download",
+                headers={"Authorization": f"OAuth {token}"},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            model_obj = resp.json()
+        else:
+            model_obj = json.loads(raw_data)
+    elif isinstance(raw_data, dict):
+        model_obj = raw_data
+    else:
+        model_obj = {}
+
+    cobra_model = workspace_model_to_cobra(model_obj)
 
     # Run FBA
     self.update_state(state="PROGRESS", meta={"status": "Running FBA..."})

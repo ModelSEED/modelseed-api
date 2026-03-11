@@ -36,13 +36,18 @@ class SubmitJobRequest(BaseModel):
 class ReconstructionRequest(BaseModel):
     """Request to build a model from a genome."""
 
-    genome: str  # workspace reference to genome
+    genome: str  # BV-BRC genome ID (e.g., "83332.12")
+    template_type: str = "gn"  # gn, gp, grampos, gramneg
+    atp_safe: bool = True
+    output_path: Optional[str] = None  # workspace path for output model
 
 
 class GapfillRequest(BaseModel):
     """Request to gapfill a model."""
 
     model: str  # workspace reference to model
+    template_type: str = "gn"
+    media: Optional[str] = None  # media workspace reference
 
 
 class FBARequest(BaseModel):
