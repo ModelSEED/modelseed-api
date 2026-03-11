@@ -2,151 +2,205 @@
 
 Modern REST API backend for the [ModelSEED](https://modelseed.org) metabolic modeling platform. Replaces the legacy Perl-based ProbModelSEED JSON-RPC service with a Python FastAPI application.
 
-## Architecture
+## Quick Start (5 minutes)
 
-```
-New Frontend (Next.js) ──REST──> modelseed-api (FastAPI) ──JSON-RPC──> PATRIC Workspace
-                       ──HTTP──> Solr (biochemistry, direct)
-                       ──HTTP──> Shock (file uploads, direct)
+### Prerequisites
+
+- Python 3.11+
+- A [BV-BRC](https://www.bv-brc.org) account (for PATRIC auth token)
+
+### 1. Clone all required repos
+
+```bash
+mkdir modelseed && cd modelseed
+
+# This API
+git clone https://github.com/ModelSEED/modelseed-api.git
+
+# Modeling engine (MUST use cshenry fork, main branch)
+git clone -b main https://github.com/cshenry/ModelSEEDpy.git
+
+# KBase utility library
+git clone https://github.com/kbase/KBUtilLib.git
+
+# Data repos
+git clone -b dev https://github.com/ModelSEED/ModelSEEDDatabase.git
+git clone https://github.com/ModelSEED/ModelSEEDTemplates.git
+git clone https://github.com/kbaseapps/cb_annotation_ontology_api.git
 ```
 
-**Key design decisions:**
-- **Synchronous service only** - long-running operations (model reconstruction, gapfilling, FBA) are dispatched to external job scripts
-- **Full workspace proxy** - frontend never talks to the Workspace service directly
-- **Biochemistry queries** - handled by this API (replaces ms_fba support service for biochem)
-- **RAST job listing** - stays on the separate `modelseed_support` service
-- **Solr/reference data** - queried directly by the frontend, not proxied
+### 2. Install Python packages
+
+```bash
+pip install -e ModelSEEDpy
+pip install -e KBUtilLib
+pip install -e "modelseed-api[modeling]"
+```
+
+### 3. Configure data paths
+
+```bash
+cd modelseed-api
+cat > .env << EOF
+MODELSEED_MODELSEED_DB_PATH=$(realpath ../ModelSEEDDatabase)
+MODELSEED_TEMPLATES_PATH=$(realpath ../ModelSEEDTemplates/templates/v7.0)
+MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH=$(realpath ../cb_annotation_ontology_api)
+EOF
+```
+
+### 4. Run the server
+
+```bash
+cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
+```
+
+### 5. Open in browser
+
+| URL | What |
+|---|---|
+| http://localhost:8000/demo/ | Interactive demo page |
+| http://localhost:8000/docs | Swagger API docs (try endpoints interactively) |
+| http://localhost:8000/redoc | ReDoc API docs |
+| http://localhost:8000/api/health | Health check |
+
+### 6. Get a PATRIC token
+
+1. Log in to https://www.bv-brc.org
+2. Open browser console (F12)
+3. Run: `copy(TOKEN)`
+4. Paste into the demo page token field
+
+## Demo Page Features
+
+Once logged in with a PATRIC token, the demo page provides:
+
+| Tab | What you can do |
+|---|---|
+| **My Models** | List models, click to view detail, export JSON/SBML/CobraPy |
+| **Public Media** | Browse available media formulations |
+| **Biochemistry** | Search compounds and reactions |
+| **Jobs** | Monitor jobs, build models from BV-BRC genome IDs |
+| **Workspace** | Browse PATRIC workspace paths |
+
+On a model detail page:
+- **Export** as JSON, SBML, or CobraPy JSON
+- **Run FBA** with media selection
+- **Run Gapfill** with media selection
+- **Integrate/Unintegrate/Delete** gapfill solutions
+
+### Try model reconstruction
+
+1. Go to Jobs tab > **Build Model**
+2. Enter a BV-BRC genome ID: `107806.10` (Buchnera, small/fast, ~15s)
+3. Select template: Gram Negative
+4. Watch the Jobs tab for completion
 
 ## API Endpoints
 
+All endpoints require a PATRIC token in the `Authorization` header.
+
 ### Models (`/api/models`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/models?path=` | List user's metabolic models |
-| GET | `/api/models/data?ref=` | Get full model data |
-| DELETE | `/api/models?ref=` | Delete a model |
-| POST | `/api/models/copy` | Copy a model |
-| GET | `/api/models/export?ref=&format=` | Export model (JSON, SBML) |
-| GET | `/api/models/gapfills?ref=` | List gapfill solutions |
-| POST | `/api/models/gapfills/manage` | Manage gapfill solutions |
-| GET | `/api/models/fba?ref=` | List FBA studies |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/models` | List user's models |
+| `GET` | `/api/models/data?ref=` | Full model detail (reactions, compounds, genes) |
+| `GET` | `/api/models/export?ref=&format=` | Export (json, sbml, cobra-json) |
+| `GET` | `/api/models/gapfills?ref=` | List gapfill solutions |
+| `POST` | `/api/models/gapfills/manage` | Integrate/unintegrate/delete gapfills |
+| `GET` | `/api/models/fba?ref=` | List FBA studies |
+| `DELETE` | `/api/models?ref=` | Delete a model |
 
 ### Jobs (`/api/jobs`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/jobs?ids=` | Poll job status |
-| POST | `/api/jobs/reconstruct` | Dispatch model reconstruction |
-| POST | `/api/jobs/gapfill` | Dispatch gapfilling |
-| POST | `/api/jobs/fba` | Dispatch FBA |
-| POST | `/api/jobs/manage` | Cancel/delete jobs |
-
-### Workspace (`/api/workspace`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/workspace/ls` | List workspace contents |
-| POST | `/api/workspace/get` | Get objects/metadata |
-| POST | `/api/workspace/create` | Create objects |
-| POST | `/api/workspace/copy` | Copy/move objects |
-| POST | `/api/workspace/delete` | Delete objects |
-| POST | `/api/workspace/metadata` | Update metadata |
-| POST | `/api/workspace/download-url` | Get download URLs |
-| POST | `/api/workspace/permissions` | List permissions |
-
-### Media (`/api/media`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/media/public` | List public media |
-| GET | `/api/media/mine` | List user's media |
-| GET | `/api/media/export?ref=` | Export media |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/jobs` | Check job statuses (poll this) |
+| `POST` | `/api/jobs/reconstruct` | Build model from BV-BRC genome ID |
+| `POST` | `/api/jobs/gapfill` | Gapfill a model |
+| `POST` | `/api/jobs/fba` | Run flux balance analysis |
+| `POST` | `/api/jobs/manage` | Delete/rerun jobs |
 
 ### Biochemistry (`/api/biochem`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/biochem/full` | Get full biochemistry DB |
-| GET | `/api/biochem/reactions?ids=` | Get reaction details |
-| GET | `/api/biochem/compounds?ids=` | Get compound details |
-| POST | `/api/biochem/adjust-reaction` | Adjust model reactions |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/biochem/compounds?query=` | Search compounds |
+| `GET` | `/api/biochem/reactions?query=` | Search reactions |
+| `GET` | `/api/biochem/compounds/{id}` | Get compound by ID |
+| `GET` | `/api/biochem/reactions/{id}` | Get reaction by ID |
 
-### System
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check |
+### Media & Workspace
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/media/public` | List public media formulations |
+| `POST` | `/api/workspace/{op}` | Proxy to PATRIC workspace (ls, get, create, delete, etc.) |
 
-## Authentication
+## Architecture
 
-The API accepts PATRIC or RAST authentication tokens in the `Authorization` header. Both token types are supported via the `nexus_emulation` OAuth1 service.
-
-The API does not handle login - the frontend authenticates directly with RAST or PATRIC and passes the token to this API.
-
-## Quick Start
-
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -e ".[dev]"
-
-# Copy and configure environment
-cp .env.example .env
-
-# Run the development server
-uvicorn modelseed_api.main:app --reload --port 8000
-
-# View API docs
-open http://localhost:8000/docs
+```
+Browser (Demo page / Future Next.js frontend)
+    |
+    v
+FastAPI REST API (this repo, port 8000)
+    |
+    +-- /api/workspace/*  --> PATRIC Workspace (p3.theseed.org)
+    +-- /api/biochem/*    --> Local ModelSEEDDatabase JSON files
+    +-- /api/jobs/*       --> Job dispatch (subprocess or Celery)
+    |
+Job Scripts (src/job_scripts/)
+    |
+    +-- reconstruct.py ----> BVBRCUtils (fetch genome) + MSReconstructionUtils (build model)
+    +-- gapfill.py --------> MSGapfill + local templates
+    +-- run_fba.py --------> cobra.Model.optimize()
 ```
 
-## Development
+**Key design decisions:**
+- Synchronous API — long-running ops dispatched to external job scripts
+- API proxies all workspace calls (shields frontend from future workspace changes)
+- Templates loaded from local git repos (not KBase workspace)
+- Runs without KBase connection (BV-BRC/PATRIC only)
 
-```bash
-# Run tests
-pytest
+## Required Repositories
 
-# Run with auto-reload
-uvicorn modelseed_api.main:app --reload
+| Repository | Branch | Why this branch |
+|---|---|---|
+| [cshenry/ModelSEEDpy](https://github.com/cshenry/ModelSEEDpy) | **main** | Has `ModelSEEDBiochem.get(path=)` and `MSFBA` module |
+| [ModelSEED/ModelSEEDDatabase](https://github.com/ModelSEED/ModelSEEDDatabase) | **dev** | Current biochemistry data (master is stale, 2021) |
+| [ModelSEED/ModelSEEDTemplates](https://github.com/ModelSEED/ModelSEEDTemplates) | **main** | v7.0 templates (Core, GramPos, GramNeg) |
+| [kbase/KBUtilLib](https://github.com/kbase/KBUtilLib) | **main** | BVBRCUtils, MSReconstructionUtils |
+| [kbaseapps/cb_annotation_ontology_api](https://github.com/kbaseapps/cb_annotation_ontology_api) | **main** | Ontology data for genome annotation |
 
-# Lint
-ruff check src/
-```
+See [DEPENDENCIES.md](DEPENDENCIES.md) for KBUtilLib initialization patterns and known workarounds.
+
+## Configuration
+
+All settings via environment variables with `MODELSEED_` prefix, or `.env` file:
+
+| Variable | Default | Description |
+|---|---|---|
+| `MODELSEED_MODELSEED_DB_PATH` | (local path) | ModelSEEDDatabase repo path |
+| `MODELSEED_TEMPLATES_PATH` | (local path) | ModelSEEDTemplates/templates/v7.0 path |
+| `MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH` | (local path) | cb_annotation_ontology_api path |
+| `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
+| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL |
 
 ## Project Structure
 
 ```
 src/
   modelseed_api/
-    main.py              # FastAPI app entry point
-    config.py            # Configuration (pydantic-settings)
-    auth/
-      dependencies.py    # Token extraction and user context
-    schemas/             # Pydantic request/response models
-      models.py          # ModelStats, ModelData, etc.
-      jobs.py            # Task
-      workspace.py       # ObjectMeta, WS request types
+    main.py              # FastAPI app + static file serving
+    config.py            # Settings (pydantic-settings, env vars)
+    auth/dependencies.py # Token extraction from headers
     routes/              # API endpoint definitions
-      models.py          # /api/models/*
-      jobs.py            # /api/jobs/*
-      workspace.py       # /api/workspace/*
-      media.py           # /api/media/*
-      biochem.py         # /api/biochem/*
-    services/            # Business logic wrapping KBUtilLib
-      workspace_service.py  # Workspace JSON-RPC proxy
-      model_service.py      # Model CRUD + gapfill/FBA listing
-    jobs/                # Job dispatch system
-      dispatcher.py      # Subprocess-based job dispatch
-      store.py           # File-based job status tracking
-  job_scripts/           # External scripts for long-running tasks
-    reconstruct.py
-    gapfill.py
-    run_fba.py
-tests/
+    schemas/             # Pydantic request/response models
+    services/            # Business logic (workspace proxy, model ops)
+    jobs/                # Job dispatch (Celery + subprocess)
+    static/index.html    # Demo page
+  job_scripts/           # External scripts for long-running ops
+    reconstruct.py       # BV-BRC genome -> metabolic model
+    gapfill.py           # Model gapfilling
+    run_fba.py           # Flux balance analysis
 ```
 
-## Related Repositories
+## License
 
-- [ProbModelSEED](https://github.com/ModelSEED/ProbModelSEED) - Legacy Perl backend (being replaced)
-- [ModelSEED-UI](https://github.com/ModelSEED/ModelSEED-UI) - Current AngularJS frontend
-- [KBUtilLib](https://github.com/cshenry/KBUtilLib) - Python utility library (service layer)
-- [ModelSEEDpy](https://github.com/ModelSEED/ModelSEEDpy) - Core metabolic modeling library
-- [Workspace](https://github.com/cshenry/Workspace) - PATRIC Workspace service
+MIT
