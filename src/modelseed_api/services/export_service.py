@@ -114,6 +114,16 @@ def workspace_model_to_cobra(model_obj: dict, model_id: str = "model") -> cobra.
             bio_rxn.add_metabolites(stoich)
         model.add_reactions([bio_rxn])
 
+    # Add exchange reactions for extracellular metabolites
+    for met in model.metabolites:
+        if met.compartment == "e0":
+            ex_id = f"EX_{met.id}"
+            ex_rxn = cobra.Reaction(id=ex_id, name=f"Exchange for {met.name}")
+            ex_rxn.lower_bound = -1000  # Allow uptake
+            ex_rxn.upper_bound = 1000   # Allow secretion
+            ex_rxn.add_metabolites({met: -1.0})
+            model.add_reactions([ex_rxn])
+
     # Set objective to first biomass
     if model_obj.get("biomasses"):
         bio_id = model_obj["biomasses"][0].get("id", "bio1")
