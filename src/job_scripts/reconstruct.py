@@ -222,6 +222,13 @@ def main():
                 ],
                 "overwrite": 1,
             })
+
+            # Explicitly set folder metadata (ws.create may not persist it)
+            try:
+                ws.update_metadata({"objects": [[output_path, folder_meta]]})
+            except Exception:
+                pass  # non-critical
+
             print(f"Model saved to workspace: {output_path}")
 
         result_data = {

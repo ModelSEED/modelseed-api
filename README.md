@@ -2,9 +2,14 @@
 
 Modern REST API backend for the [ModelSEED](https://modelseed.org) metabolic modeling platform. Replaces the legacy Perl-based ProbModelSEED JSON-RPC service with a Python FastAPI application.
 
+The API handles model listing, reconstruction, gapfilling, FBA, biochemistry queries, and PATRIC workspace operations. Long-running jobs (model building, gapfilling, FBA) are dispatched to external scripts via subprocess or Celery.
+
+A separate Next.js/TypeScript frontend will be built to replace the current ModelSEED website. This repo includes a lightweight demo dashboard at `/demo/` for development and testing.
+
+
 ## Quick Start
 
-### 1. Clone all required repos
+### 1. Clone required repositories
 
 ```bash
 mkdir modelseed && cd modelseed
@@ -12,11 +17,11 @@ mkdir modelseed && cd modelseed
 # This API
 git clone https://github.com/ModelSEED/modelseed-api.git
 
-# Modeling engine (MUST use cshenry fork, main branch)
+# Modeling engine -- MUST use cshenry fork, main branch
 git clone -b main https://github.com/cshenry/ModelSEEDpy.git
 
-# KBase utility library (private — requires kbase org access)
-git clone https://github.com/kbase/KBUtilLib.git
+# KBase utility library
+git clone https://github.com/cshenry/KBUtilLib.git
 
 # Data repos
 git clone -b dev https://github.com/ModelSEED/ModelSEEDDatabase.git
@@ -31,7 +36,7 @@ cd modelseed
 docker compose -f modelseed-api/docker-compose.yml up --build
 ```
 
-Open http://localhost:8000/demo/ — done. All Python deps are installed inside the container.
+Open http://localhost:8000/demo/ -- all Python dependencies are installed inside the container.
 
 ### 2b. Manual setup
 
@@ -60,10 +65,10 @@ cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
 
 ### 3. Open in browser
 
-| URL | What |
-|---|---|
-| http://localhost:8000/demo/ | Interactive demo page |
-| http://localhost:8000/docs | Swagger API docs (try endpoints interactively) |
+| URL | Description |
+|-----|-------------|
+| http://localhost:8000/demo/ | Demo dashboard (development/testing) |
+| http://localhost:8000/docs | Swagger API docs (interactive) |
 | http://localhost:8000/redoc | ReDoc API docs |
 | http://localhost:8000/api/health | Health check |
 
@@ -74,137 +79,309 @@ cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
 3. Run: `copy(TOKEN)`
 4. Paste into the demo page token field
 
-## Demo Page Features
-
-Once logged in with a PATRIC token, the demo page provides:
-
-| Tab | What you can do |
-|---|---|
-| **My Models** | List models, click to view detail, export JSON/SBML/CobraPy |
-| **Public Media** | Browse available media formulations |
-| **Biochemistry** | Search compounds and reactions |
-| **Jobs** | Monitor jobs, build models from BV-BRC genome IDs |
-| **Workspace** | Browse PATRIC workspace paths |
-
-On a model detail page:
-- **Export** as JSON, SBML, or CobraPy JSON
-- **Run FBA** with media selection
-- **Run Gapfill** with media selection
-- **Integrate/Unintegrate/Delete** gapfill solutions
-
-### Try model reconstruction
-
-1. Go to Jobs tab > **Build Model**
-2. Enter a BV-BRC genome ID: `107806.10` (Buchnera, small/fast, ~15s)
-3. Select template: Gram Negative
-4. Watch the Jobs tab for completion
 
 ## API Endpoints
 
 All endpoints require a PATRIC token in the `Authorization` header.
 
 ### Models (`/api/models`)
+
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/api/models` | List user's models |
 | `GET` | `/api/models/data?ref=` | Full model detail (reactions, compounds, genes) |
-| `GET` | `/api/models/export?ref=&format=` | Export (json, sbml, cobra-json) |
+| `GET` | `/api/models/export?ref=&format=` | Export as json, sbml, or cobra-json |
 | `GET` | `/api/models/gapfills?ref=` | List gapfill solutions |
-| `POST` | `/api/models/gapfills/manage` | Integrate/unintegrate/delete gapfills |
+| `POST` | `/api/models/gapfills/manage` | Integrate, unintegrate, or delete gapfills |
 | `GET` | `/api/models/fba?ref=` | List FBA studies |
 | `DELETE` | `/api/models?ref=` | Delete a model |
 
 ### Jobs (`/api/jobs`)
+
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/api/jobs` | Check job statuses (poll this) |
 | `POST` | `/api/jobs/reconstruct` | Build model from BV-BRC genome ID |
 | `POST` | `/api/jobs/gapfill` | Gapfill a model |
 | `POST` | `/api/jobs/fba` | Run flux balance analysis |
 | `POST` | `/api/jobs/merge` | Merge multiple models |
-| `POST` | `/api/jobs/manage` | Delete/rerun jobs |
+| `POST` | `/api/jobs/manage` | Delete or rerun jobs |
 
 ### Biochemistry (`/api/biochem`)
+
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/api/biochem/compounds?query=` | Search compounds |
 | `GET` | `/api/biochem/reactions?query=` | Search reactions |
 | `GET` | `/api/biochem/compounds/{id}` | Get compound by ID |
 | `GET` | `/api/biochem/reactions/{id}` | Get reaction by ID |
+| `GET` | `/api/biochem/stats` | Database statistics |
+| `GET` | `/api/biochem/search?query=&type=` | Unified search |
 
-### Media & Workspace
+### Media and Workspace
+
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/api/media/public` | List public media formulations |
 | `POST` | `/api/workspace/{op}` | Proxy to PATRIC workspace (ls, get, create, delete, etc.) |
+
 
 ## Architecture
 
 ```
-Browser (Demo page / Future Next.js frontend)
+Browser (Demo dashboard or future Next.js frontend)
     |
     v
 FastAPI REST API (this repo, port 8000)
     |
     +-- /api/workspace/*  --> PATRIC Workspace (p3.theseed.org)
-    +-- /api/biochem/*    --> Local ModelSEEDDatabase JSON files
+    +-- /api/biochem/*    --> Local ModelSEEDDatabase files
     +-- /api/jobs/*       --> Job dispatch (subprocess or Celery)
     |
 Job Scripts (src/job_scripts/)
     |
     +-- reconstruct.py ----> BVBRCUtils (fetch genome) + MSReconstructionUtils (build model)
-    +-- gapfill.py --------> MSGapfill + local templates
+    +-- gapfill.py --------> FBAModelBuilder + MSGapfill + local templates
     +-- run_fba.py --------> cobra.Model.optimize()
 ```
 
-**Key design decisions:**
-- Synchronous API — long-running ops dispatched to external job scripts
-- API proxies all workspace calls (shields frontend from future workspace changes)
-- Templates loaded from local git repos (not KBase workspace)
-- Runs without KBase connection (BV-BRC/PATRIC only)
+Key design decisions:
 
-## Required Repositories
+- **Synchronous API** -- long-running operations are dispatched to external job scripts, not handled in-process
+- **Workspace proxy** -- the API proxies all PATRIC workspace calls, shielding the frontend from future workspace changes
+- **Local templates** -- model templates are loaded from git repos on disk, not from KBase workspace
+- **No KBase dependency** -- runs entirely against BV-BRC/PATRIC APIs, no KBase connection needed
 
-| Repository | Branch | Why this branch |
-|---|---|---|
-| [cshenry/ModelSEEDpy](https://github.com/cshenry/ModelSEEDpy) | **main** | Has `ModelSEEDBiochem.get(path=)` and `MSFBA` module |
-| [ModelSEED/ModelSEEDDatabase](https://github.com/ModelSEED/ModelSEEDDatabase) | **dev** | Current biochemistry data (master is stale, 2021) |
-| [ModelSEED/ModelSEEDTemplates](https://github.com/ModelSEED/ModelSEEDTemplates) | **main** | v7.0 templates (Core, GramPos, GramNeg) |
-| [kbase/KBUtilLib](https://github.com/kbase/KBUtilLib) | **main** | BVBRCUtils, MSReconstructionUtils |
-| [kbaseapps/cb_annotation_ontology_api](https://github.com/kbaseapps/cb_annotation_ontology_api) | **main** | Ontology data for genome annotation |
 
-See [DEPENDENCIES.md](DEPENDENCIES.md) for KBUtilLib initialization patterns and known workarounds.
+## Demo Dashboard (Development Only)
 
-## Configuration
+The demo dashboard at `/demo/` is a single-page HTML app for testing API functionality during development. It is not the production frontend.
 
-All settings via environment variables with `MODELSEED_` prefix, or `.env` file:
+The production frontend will be a separate Next.js/TypeScript application built by the frontend team. The API is designed to be consumed by any HTTP client.
 
-| Variable | Default | Description |
-|---|---|---|
-| `MODELSEED_MODELSEED_DB_PATH` | (local path) | ModelSEEDDatabase repo path |
-| `MODELSEED_TEMPLATES_PATH` | (local path) | ModelSEEDTemplates/templates/v7.0 path |
-| `MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH` | (local path) | cb_annotation_ontology_api path |
-| `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
-| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL |
+Demo features:
+
+| Tab | What it does |
+|-----|--------------|
+| My Models | List models, click to view detail, export, gapfill, run FBA |
+| Build Model | Build a new model from a BV-BRC genome ID with optional gapfilling |
+| Public Media | Browse available media formulations |
+| Biochemistry | Search compounds and reactions in the ModelSEED database |
+| Jobs | Monitor running, completed, and failed jobs |
+| Workspace | Browse PATRIC workspace paths |
+
+
+## Dependencies
+
+### Required Repositories
+
+| Repository | Branch | Purpose | Why this branch |
+|------------|--------|---------|-----------------|
+| [cshenry/ModelSEEDpy](https://github.com/cshenry/ModelSEEDpy) | **main** | Core modeling engine | Has `ModelSEEDBiochem.get(path=)` and MSFBA module; the main ModelSEED/ModelSEEDpy repo does not |
+| [ModelSEED/ModelSEEDDatabase](https://github.com/ModelSEED/ModelSEEDDatabase) | **dev** | Biochemistry data (compounds, reactions, aliases) | `master` branch is stale (last updated 2021); `dev` has current data |
+| [ModelSEED/ModelSEEDTemplates](https://github.com/ModelSEED/ModelSEEDTemplates) | **main** | Model templates v7.0 (Core, GramPos, GramNeg) | v7.0 templates are only on main |
+| [cshenry/KBUtilLib](https://github.com/cshenry/KBUtilLib) | **main** | BVBRCUtils (genome fetch), MSReconstructionUtils (model build) | Main utility library for BV-BRC integration |
+| [kbaseapps/cb_annotation_ontology_api](https://github.com/kbaseapps/cb_annotation_ontology_api) | **main** | Ontology data for genome annotation | Required by BVBRCUtils for annotation mapping |
+| [kbase/cobrakbase](https://github.com/kbase/cobrakbase) | (pip dep) | KBase object factory (genome dict to MSGenome) | Installed automatically via pip |
+
+### Python Packages
+
+Core dependencies (see `pyproject.toml`):
+
+- `fastapi` + `uvicorn` -- web framework and ASGI server
+- `cobra` -- constraint-based modeling (FBA, SBML I/O)
+- `modelseedpy` -- ModelSEED modeling engine (from cshenry fork)
+- `kbutillib` -- KBase/BV-BRC utility library
+- `cobrakbase` -- KBase/cobra bridge for genome and model objects
+- `requests` -- HTTP client for workspace and BV-BRC API calls
+- `pydantic-settings` -- configuration management
+- `celery[redis]` -- job scheduling (production mode only)
+
+
+## Workarounds for KBase-Independent Operation
+
+KBUtilLib was designed for KBase notebook apps. Running it standalone requires these workarounds, applied in the job scripts. These should ideally be fixed upstream in KBUtilLib.
+
+### 1. BVBRCUtils.save() no-op
+
+`build_kbase_genome_from_api()` calls `self.save("test_genome", genome)` which requires KBase SDK NotebookUtils. Patched as a no-op:
+
+```python
+BVBRCUtils.save = lambda self, name, obj: None
+```
+
+### 2. Template .info attribute
+
+`MSTemplateBuilder.from_dict().build()` does not set the `.info` attribute on the template object, but `build_metabolic_model()` references it. Patched with a mock class:
+
+```python
+class _Info:
+    def __init__(self, name):
+        self.name = name
+    def __str__(self):
+        return self.name
+
+template.info = _Info("GramNegModelTemplateV7")
+```
+
+### 3. Genome classifier bypass
+
+`MSGenomeClassifier` needs pickle files and feature data not included in the KBUtilLib repo. Bypassed by passing `classifier=None` and specifying template type explicitly:
+
+```python
+recon.build_metabolic_model(genome, classifier=None, gs_template='gn')
+```
+
+### 4. KB_AUTH_TOKEN environment variable
+
+`cobrakbase.KBaseAPI()` requires a non-empty `KB_AUTH_TOKEN` environment variable even when not using KBase. Set to a dummy value:
+
+```python
+os.environ['KB_AUTH_TOKEN'] = 'unused'
+```
+
+### Planned upstream fix
+
+Chris Henry has agreed to add a `template_source="git"` configuration parameter to KBUtilLib that would load templates from local git repos, eliminating workarounds 2 and 4.
+
+
+## KBUtilLib Initialization
+
+Full initialization pattern for running KBUtilLib without KBase:
+
+```python
+import os
+os.environ['KB_AUTH_TOKEN'] = 'unused'
+
+from kbutillib import BVBRCUtils, MSReconstructionUtils
+
+BVBRCUtils.save = lambda self, name, obj: None
+
+kwargs = dict(
+    config_file=False,
+    token_file=None,
+    kbase_token_file=None,
+    token={'patric': '<user_patric_token>', 'kbase': 'unused'},
+    modelseed_path='<path_to_ModelSEEDDatabase>',
+    cb_annotation_ontology_api_path='<path_to_cb_annotation_ontology_api>',
+)
+
+bvbrc = BVBRCUtils(**kwargs)
+recon = MSReconstructionUtils(**kwargs)
+```
+
+
+## Template Loading
+
+Templates are loaded from local JSON files instead of KBase workspace:
+
+```python
+import json
+from modelseedpy import MSTemplateBuilder
+
+with open('ModelSEEDTemplates/templates/v7.0/GramNegModelTemplateV7.json') as f:
+    template = MSTemplateBuilder.from_dict(json.load(f)).build()
+
+# Add mock .info (see workaround #2 above)
+template.info = _Info("GramNegModelTemplateV7")
+```
+
+Available templates (v7.0):
+
+| File | Description |
+|------|-------------|
+| `Core-V6.json` | Core metabolism (~252 reactions) |
+| `GramNegModelTemplateV7.json` | Gram-negative (~8584 reactions) |
+| `GramPosModelTemplateV7.json` | Gram-positive (~8584 reactions) |
+
+
+## Job Scheduling
+
+Two modes controlled by the `MODELSEED_USE_CELERY` setting (default: `false`):
+
+**Local (development):** Jobs run as subprocesses. Job state is stored as JSON files in `/tmp/modelseed-jobs/`. No external infrastructure needed.
+
+**Production:** Jobs are dispatched via Celery to a Redis broker at `redis://bioseed_redis:6379/10`. Queue name: `modelseed`. Monitor at `http://poplar.cels.anl.gov:5555/` (Flower).
+
 
 ## Project Structure
 
 ```
 src/
-  modelseed_api/
-    main.py              # FastAPI app + static file serving
-    config.py            # Settings (pydantic-settings, env vars)
-    auth/dependencies.py # Token extraction from headers
-    routes/              # API endpoint definitions
-    schemas/             # Pydantic request/response models
-    services/            # Business logic (workspace proxy, model ops)
-    jobs/                # Job dispatch (Celery + subprocess)
-    static/index.html    # Demo page
-  job_scripts/           # External scripts for long-running ops
-    reconstruct.py       # BV-BRC genome -> metabolic model
-    gapfill.py           # Model gapfilling
-    run_fba.py           # Flux balance analysis
+  modelseed_api/              # FastAPI application (the API)
+    main.py                   # App initialization, static file serving
+    config.py                 # Settings (pydantic-settings, env vars)
+    auth/dependencies.py      # PATRIC/RAST token extraction
+    routes/                   # API endpoint definitions
+      models.py               #   /api/models/*
+      jobs.py                 #   /api/jobs/*
+      biochem.py              #   /api/biochem/*
+      media.py                #   /api/media/*
+      workspace.py            #   /api/workspace/*
+    schemas/                  # Pydantic request/response models
+    services/                 # Business logic
+      workspace_service.py    #   PATRIC workspace proxy
+      model_service.py        #   Model CRUD, gapfill management
+      biochem_service.py      #   ModelSEEDDatabase queries
+      export_service.py       #   SBML/CobraPy export
+    jobs/                     # Job dispatch system
+      dispatcher.py           #   Subprocess or Celery dispatch
+      store.py                #   Job state (JSON files)
+      celery_app.py           #   Celery configuration
+      tasks.py                #   Celery task definitions
+    static/index.html         # Demo dashboard (development only)
+  job_scripts/                # External scripts for long-running ops
+    reconstruct.py            # BV-BRC genome to metabolic model
+    gapfill.py                # Model gapfilling via MSGapfill
+    run_fba.py                # Flux balance analysis
+    merge_models.py           # Model merging
+    utils.py                  # Shared utilities (media parsing, etc.)
+tests/
+  test_live_integration.py    # Integration tests against live workspace
 ```
+
+
+## Configuration
+
+All settings are loaded from environment variables with the `MODELSEED_` prefix, or from a `.env` file. See `.env.example` for the full list.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODELSEED_HOST` | `0.0.0.0` | Server bind address |
+| `MODELSEED_PORT` | `8000` | Server port |
+| `MODELSEED_DEBUG` | `false` | Enable debug mode |
+| `MODELSEED_MODELSEED_DB_PATH` | (required) | Path to ModelSEEDDatabase repo |
+| `MODELSEED_TEMPLATES_PATH` | (required) | Path to ModelSEEDTemplates/templates/v7.0 |
+| `MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH` | (required) | Path to cb_annotation_ontology_api repo |
+| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL |
+| `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
+| `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
+
+
+## Remaining Work
+
+### Phase 2 features
+
+- Model editing endpoints (edit reactions, compounds)
+- PlantSEED endpoints (pipeline, annotate, features, compare regions)
+- Import KBase models
+- Delete FBA studies
+
+### Production hardening
+
+- CI/CD pipeline
+- Integration tests against dev workspace
+- Structured logging
+- Celery+Redis deployment on poplar
+- Health check enhancements
+
+### Upstream improvements (KBUtilLib)
+
+- `template_source="git"` config to load templates from local repos (eliminates workarounds 2 and 4)
+- Optional `save()` method (eliminates workaround 1)
+- Genome classifier files included in repo or made optional (eliminates workaround 3)
+- PR #24 pending: PATRIC media TSV parsing support in PatricWSUtils
+
 
 ## License
 

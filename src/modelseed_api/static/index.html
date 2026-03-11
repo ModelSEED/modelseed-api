@@ -97,6 +97,7 @@
 
         <div class="tabs" id="tab-bar">
             <div class="tab active" onclick="switchTab('models')">My Models</div>
+            <div class="tab" onclick="switchTab('build')">Build Model</div>
             <div class="tab" onclick="switchTab('media')">Public Media</div>
             <div class="tab" onclick="switchTab('biochem')">Biochemistry</div>
             <div class="tab" onclick="switchTab('jobs')">Jobs</div>
@@ -117,7 +118,7 @@
     let jobPollTimer = null;
 
     // Tab names in order
-    const TAB_NAMES = ['models', 'media', 'biochem', 'jobs', 'workspace'];
+    const TAB_NAMES = ['models', 'build', 'media', 'biochem', 'jobs', 'workspace'];
 
     // Check API health on load
     fetch(API + '/api/health').then(r => r.json()).then(d => {
@@ -183,6 +184,7 @@
             return;
         }
         if (tab === 'models') { refreshModels(); return; }
+        else if (tab === 'build') renderBuildModel();
         else if (tab === 'media') loadMedia();
         else if (tab === 'jobs') renderJobs();
         else if (tab === 'workspace') renderWorkspace();
@@ -209,12 +211,8 @@
     }
 
     function renderModels(models) {
-        if (!models.length) { panel('empty', 'No models found. Use "Build New Model" to create one.'); return; }
-        let html = `
-            <div class="btn-group">
-                <button class="btn btn-primary" onclick="showBuildModelForm()">Build New Model</button>
-            </div>
-            <table><tr><th>Name</th><th>Source ID</th><th>Type</th><th>Reactions</th><th>Compounds</th><th>Genes</th><th>Gapfills</th><th>FBA</th></tr>`;
+        if (!models.length) { panel('empty', 'No models found. Use the "Build Model" tab to create one.'); return; }
+        let html = `<table><tr><th>Name</th><th>Source ID</th><th>Type</th><th>Reactions</th><th>Compounds</th><th>Genes</th><th>Gapfills</th><th>FBA</th></tr>`;
         for (const m of models) {
             html += `<tr class="clickable" onclick="loadModel('${m.ref}')">
                 <td><strong>${esc(m.name)}</strong></td>
@@ -231,10 +229,8 @@
         panel('html', html);
     }
 
-    async function showBuildModelForm() {
+    async function renderBuildModel() {
         let html = `
-            <div class="breadcrumb"><a onclick="renderModels(modelsCache)">My Models</a> &gt; Build New Model</div>
-            <button class="back-btn" onclick="renderModels(modelsCache)">&larr; Back</button>
             <h3>Build Metabolic Model</h3>
             <div class="form-group">
                 <label>BV-BRC Genome ID:</label>
@@ -321,7 +317,7 @@
                         ${rxns} reactions, ${genes} genes, class: ${cls}${gf}<br>
                         Saved to: <code>${esc(outputPath)}</code><br><br>
                         <button class="btn btn-primary" onclick="viewNewModel('${esc(outputPath)}')">View Model</button>
-                        <button class="btn" onclick="renderModels(modelsCache)">Back to Models</button>
+                        <button class="btn" onclick="switchTab('models')">Back to Models</button>
                     </div>`;
                 // Refresh models cache
                 apiFetch('/api/models').then(m => { modelsCache = m; }).catch(() => {});
@@ -633,7 +629,6 @@
             <h3>Job Status</h3>
             <div class="btn-group">
                 <button class="btn" onclick="refreshJobs()">Refresh</button>
-                <button class="btn btn-primary" onclick="showBuildModelForm()">Build Model</button>
             </div>
             <div id="jobs-list"><div class="loading">Loading jobs...</div></div>
         `;
