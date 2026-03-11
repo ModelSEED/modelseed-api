@@ -171,29 +171,66 @@ def main():
             gapfill_count = len(solutions) if solutions else 0
             print(f"Gapfilling completed: {gapfill_count} solutions")
 
+        # Compute model stats
+        n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
+        n_genes = output.get("Model genes", len(mdlutl.model.genes))
+        n_metabolites = len(mdlutl.model.metabolites)
+        n_compartments = len(mdlutl.model.compartments)
+        classification = output.get("Class", template_type)
+
         # Step 6: Save model to PATRIC workspace
         if output_path:
             update_job(job_file, {"progress": "Saving to workspace..."})
             from modelseed_api.services.workspace_service import WorkspaceService
             ws = WorkspaceService(args.token)
-            # Save the cobra model as workspace JSON
-            model_data = mdlutl.model.to_json()
+
+            # Serialize to workspace format (modelreactions, modelcompounds, etc.)
+            # mdlutl.model is an FBAModel (from cobrakbase) — get_data() returns
+            # workspace-format dict with modelreactions, modelcompounds, etc.
+            if not hasattr(mdlutl.model, 'get_data'):
+                from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
+                mdlutl.model = CobraModelConverter(mdlutl.model).build()
+            mdlutl.save_attributes()
+            ws_data = mdlutl.model.get_data()
+            model_data = json.dumps(ws_data)
+
+            n_biomasses = len(ws_data.get("biomasses", []))
+
+            # Folder metadata so list_models picks it up
+            folder_meta = {
+                "id": genome_id,
+                "name": genome_id,
+                "source_id": genome_id,
+                "source": "ModelSEED",
+                "type": classification,
+                "genome_ref": genome_id,
+                "num_reactions": str(n_reactions),
+                "num_compounds": str(n_metabolites),
+                "num_genes": str(n_genes),
+                "num_compartments": str(n_compartments),
+                "num_biomasses": str(n_biomasses),
+                "integrated_gapfills": str(gapfill_count),
+                "unintegrated_gapfills": "0",
+                "fba_count": "0",
+            }
+
+            # Create modelfolder + model data in one call
             ws.create({
-                "objects": [[
-                    f"{output_path}/model",
-                    "modelfolder",
-                    {},
-                    model_data,
-                ]]
+                "objects": [
+                    [output_path, "modelfolder", folder_meta, ""],
+                    [f"{output_path}/model", "model", {}, model_data],
+                ],
+                "overwrite": 1,
             })
+            print(f"Model saved to workspace: {output_path}")
 
         result_data = {
             "status": "success",
             "genome_id": genome_id,
-            "reactions": output.get("Reactions", len(mdlutl.model.reactions)),
-            "metabolites": len(mdlutl.model.metabolites),
-            "genes": output.get("Model genes", len(mdlutl.model.genes)),
-            "classification": output.get("Class", template_type),
+            "reactions": n_reactions,
+            "metabolites": n_metabolites,
+            "genes": n_genes,
+            "classification": classification,
             "core_gapfilling": output.get("Core GF", "NA"),
             "gapfilled": do_gapfill,
             "gapfill_solutions": gapfill_count,

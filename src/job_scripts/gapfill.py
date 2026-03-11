@@ -83,9 +83,10 @@ def main():
         else:
             model_obj = {}
 
-        # Step 2: Convert to cobra model
+        # Step 2: Load model as FBAModel (preserves workspace format for save-back)
         update_job(job_file, {"progress": "Converting model..."})
-        cobra_model = workspace_model_to_cobra(model_obj)
+        from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
+        fba_model = FBAModelBuilder(model_obj).build()
 
         # Step 3: Load template
         update_job(job_file, {"progress": "Loading template..."})
@@ -116,7 +117,7 @@ def main():
         from modelseedpy import MSGapfill
 
         gapfiller = MSGapfill(
-            cobra_model,
+            fba_model,
             default_target="bio1",
             default_gapfill_templates=[template],
         )
@@ -130,14 +131,37 @@ def main():
                 if hasattr(sol, "reactions"):
                     added_reactions.extend([r.id for r in sol.reactions])
 
+        # Step 6: Save gapfilled model back to workspace
+        if solutions_count > 0:
+            update_job(job_file, {"progress": "Saving gapfilled model..."})
+            model_data = json.dumps(fba_model.get_data())
+            ws.create({
+                "objects": [[
+                    f"{model_ref}/model",
+                    "model",
+                    {},
+                    model_data,
+                ]],
+                "overwrite": 1,
+            })
+            # Update folder metadata with new reaction count
+            try:
+                ws.update_metadata({
+                    "objects": [[model_ref, {
+                        "num_reactions": str(len(fba_model.reactions)),
+                        "num_compounds": str(len(fba_model.metabolites)),
+                    }]],
+                })
+            except Exception:
+                pass
+            print(f"Gapfilled model saved to workspace: {model_ref}")
+
         result_data = {
             "status": "success",
             "model_ref": model_ref,
             "solutions_count": solutions_count,
             "added_reactions": len(added_reactions),
         }
-
-        # TODO: Save gapfilled model back to workspace
 
         update_job(job_file, {
             "status": "completed",

@@ -182,7 +182,7 @@
             panel('empty', 'Enter your PATRIC token above to get started.');
             return;
         }
-        if (tab === 'models') renderModels(modelsCache);
+        if (tab === 'models') { refreshModels(); return; }
         else if (tab === 'media') loadMedia();
         else if (tab === 'jobs') renderJobs();
         else if (tab === 'workspace') renderWorkspace();
@@ -198,8 +198,18 @@
 
     // ==================== MODELS TAB ====================
 
+    async function refreshModels() {
+        panel('loading', 'Loading models...');
+        try {
+            modelsCache = await apiFetch('/api/models');
+            renderModels(modelsCache);
+        } catch (err) {
+            panel('error', 'Failed to load models: ' + err.message);
+        }
+    }
+
     function renderModels(models) {
-        if (!models.length) { panel('empty', 'No models found.'); return; }
+        if (!models.length) { panel('empty', 'No models found. Use "Build New Model" to create one.'); return; }
         let html = `
             <div class="btn-group">
                 <button class="btn btn-primary" onclick="showBuildModelForm()">Build New Model</button>
@@ -274,6 +284,7 @@
         const mediaSel = document.getElementById('build-media');
         const media = mediaSel ? mediaSel.value || null : null;
         const gapfill = !!media;
+        const outputPath = `/${USERNAME}/modelseed/${genome}`;
         const statusEl = document.getElementById('build-status');
         const label = gapfill ? ' + gapfill in ' + media.split('/').pop() : '';
         statusEl.innerHTML = '<div class="job-status queued">Submitting reconstruction' + label + '...</div>';
@@ -283,11 +294,56 @@
                 template_type: template,
                 gapfill: gapfill,
                 media: media,
+                output_path: outputPath,
             });
-            statusEl.innerHTML = `<div class="job-status running">Job submitted: ${jobId}<br>Check the Jobs tab for status.</div>`;
+            statusEl.innerHTML = `<div class="job-status running">Job submitted: ${jobId}<br>Building model...</div>`;
+            pollBuildJob(jobId, outputPath, statusEl);
         } catch (err) {
             statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;
         }
+    }
+
+    async function pollBuildJob(jobId, outputPath, statusEl) {
+        try {
+            const jobs = await apiFetch(`/api/jobs?ids=${jobId}`);
+            const job = jobs[jobId];
+            if (!job) { statusEl.innerHTML = '<div class="job-status failed">Job not found</div>'; return; }
+
+            if (job.status === 'completed') {
+                const result = job.result || {};
+                const rxns = result.reactions || '?';
+                const genes = result.genes || '?';
+                const cls = result.classification || '?';
+                const gf = result.gapfilled ? `, gapfilled (${result.gapfill_solutions || 0} solutions)` : '';
+                statusEl.innerHTML = `
+                    <div class="job-status completed">
+                        <strong>Model built successfully!</strong><br>
+                        ${rxns} reactions, ${genes} genes, class: ${cls}${gf}<br>
+                        Saved to: <code>${esc(outputPath)}</code><br><br>
+                        <button class="btn btn-primary" onclick="viewNewModel('${esc(outputPath)}')">View Model</button>
+                        <button class="btn" onclick="renderModels(modelsCache)">Back to Models</button>
+                    </div>`;
+                // Refresh models cache
+                apiFetch('/api/models').then(m => { modelsCache = m; }).catch(() => {});
+                return;
+            }
+
+            if (job.status === 'failed') {
+                statusEl.innerHTML = `<div class="job-status failed"><strong>Build failed:</strong> ${esc(job.error || 'Unknown error')}</div>`;
+                return;
+            }
+
+            // Still running — show progress and poll again
+            const progress = job.progress || 'Working...';
+            statusEl.innerHTML = `<div class="job-status running"><strong>Building model...</strong> ${esc(progress)}</div>`;
+            setTimeout(() => pollBuildJob(jobId, outputPath, statusEl), 3000);
+        } catch (err) {
+            statusEl.innerHTML = `<div class="job-status failed">Poll error: ${err.message}</div>`;
+        }
+    }
+
+    function viewNewModel(ref) {
+        loadModel(ref);
     }
 
     async function loadModel(ref) {
@@ -597,19 +653,32 @@
             }
             // Sort by submit_time descending
             jobList.sort((a, b) => (b.submit_time || '').localeCompare(a.submit_time || ''));
-            let html = '<table><tr><th>ID</th><th>App</th><th>Status</th><th>Submitted</th><th>Started</th><th>Completed</th><th>Error</th></tr>';
+            let html = '<table><tr><th>ID</th><th>App</th><th>Status</th><th>Progress</th><th>Submitted</th><th>Completed</th><th>Actions</th></tr>';
             for (const j of jobList) {
                 const statusClass = j.status === 'completed' ? 'badge-green' :
                                    j.status === 'failed' ? 'badge-red' :
                                    j.status === 'in-progress' ? 'badge-blue' : 'badge-gray';
+                // Build action/info column
+                let actionCol = '';
+                if (j.status === 'completed' && j.app === 'ModelReconstruction' && j.result) {
+                    const r = j.result;
+                    const args = j.parameters?.arguments || {};
+                    const modelRef = args.output_path || `/${USERNAME}/modelseed/${args.genome}`;
+                    actionCol = `<button class="btn btn-primary" style="font-size:11px;padding:2px 8px" onclick="loadModel('${esc(modelRef)}');switchTab('models')">View Model</button>`;
+                    actionCol += `<div style="font-size:11px;color:#888;margin-top:2px">${r.reactions||'?'} rxns, ${r.genes||'?'} genes</div>`;
+                } else if (j.status === 'failed') {
+                    actionCol = `<span style="font-size:11px;color:#c0392b">${esc(j.error||'')}</span>`;
+                } else if (j.status === 'in-progress') {
+                    actionCol = `<span style="font-size:11px;color:#21618c">${esc(j.progress||'Working...')}</span>`;
+                }
                 html += `<tr>
                     <td style="font-family:monospace;font-size:11px">${esc(j.id?.substring(0,8))}...</td>
                     <td>${esc(j.app)}</td>
                     <td><span class="badge-sm ${statusClass}">${esc(j.status)}</span></td>
+                    <td style="font-size:12px">${esc(j.progress||'-')}</td>
                     <td style="font-size:12px">${esc(j.submit_time||'-')}</td>
-                    <td style="font-size:12px">${esc(j.start_time||'-')}</td>
                     <td style="font-size:12px">${esc(j.completed_time||'-')}</td>
-                    <td style="font-size:11px;color:#c0392b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(j.error||'')}</td>
+                    <td>${actionCol}</td>
                 </tr>`;
             }
             html += '</table>';

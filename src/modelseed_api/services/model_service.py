@@ -56,10 +56,13 @@ class ModelService:
                 # Models appear as folders or model objects with model metadata.
                 # A model folder has num_reactions in user_meta; a bare "model" type
                 # object may also appear at the top level.
+                # Also include plain folders — they may contain model data
+                # saved without explicit modelfolder metadata.
                 obj_type = obj_meta[1]
                 is_model = (
                     obj_type in ("modelfolder", "model")
                     or (obj_type == "folder" and "num_reactions" in user_meta)
+                    or obj_type == "folder"  # include all folders under modelseed/
                 )
                 if not is_model:
                     continue
@@ -148,9 +151,54 @@ class ModelService:
 
         Replicates ProbModelSEED.get_model.
         Retrieves the model object from {model_ref}/model in the workspace.
+        Also repairs folder metadata if missing (one-time fix for models
+        saved without stats).
         """
         model_obj = self.get_model_raw(model_ref)
-        return self._format_model_data(model_ref, model_obj)
+        formatted = self._format_model_data(model_ref, model_obj)
+
+        # Auto-repair: update folder metadata if it's missing stats
+        try:
+            self._ensure_folder_metadata(model_ref, formatted)
+        except Exception:
+            pass  # non-critical, don't block model view
+
+        return formatted
+
+    def _ensure_folder_metadata(self, model_ref: str, formatted: dict):
+        """Update the modelfolder metadata with model stats if missing."""
+        # Check current folder metadata
+        folder_result = self.ws.ls({"paths": [model_ref]})
+        if not folder_result:
+            return
+
+        # Get parent folder metadata via ls on parent
+        parent = model_ref.rsplit("/", 1)[0] + "/"
+        parent_result = self.ws.ls({"paths": [parent]})
+        if not parent_result or parent not in parent_result:
+            return
+
+        folder_name = model_ref.rstrip("/").split("/")[-1]
+        for entry in parent_result[parent]:
+            if entry[0] == folder_name:
+                user_meta = entry[7] if isinstance(entry[7], dict) else {}
+                if user_meta.get("num_reactions"):
+                    return  # metadata already present
+                break
+
+        # Metadata missing — update it
+        meta = {
+            "num_reactions": str(len(formatted.get("reactions", []))),
+            "num_compounds": str(len(formatted.get("compounds", []))),
+            "num_genes": str(len(formatted.get("genes", []))),
+            "num_compartments": str(len(formatted.get("compartments", []))),
+            "num_biomasses": str(len(formatted.get("biomasses", []))),
+            "name": folder_name,
+            "source": "ModelSEED",
+        }
+        self.ws.update_metadata({
+            "objects": [[model_ref, meta]],
+        })
 
     def _format_model_data(self, ref: str, model_obj: dict) -> dict:
         """Format raw model object into ModelData shape."""
