@@ -1,0 +1,12 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: modelseed-api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - modelseed-jobs:/tmp/modelseed-jobs
+
+volumes:
+  modelseed-jobs:

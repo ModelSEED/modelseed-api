@@ -30,10 +30,10 @@ class Settings(BaseSettings):
     public_media_path: str = "/chenry/public/modelsupport/media"
     public_plants_path: str = "/plantseed/plantseed/"
 
-    # Local data paths
-    modelseed_db_path: str = "/Users/jplfaria/repos/ModelSEEDDatabase"
-    templates_path: str = "/Users/jplfaria/repos/ModelSEEDTemplates/templates/v7.0"
-    cb_annotation_ontology_api_path: str = "/Users/jplfaria/repos/cb_annotation_ontology_api"
+    # Local data paths (override via .env or MODELSEED_ env vars)
+    modelseed_db_path: str = ""
+    templates_path: str = ""
+    cb_annotation_ontology_api_path: str = ""
 
     # Job scripts (subprocess fallback for local dev)
     job_scripts_dir: str = "src/job_scripts"

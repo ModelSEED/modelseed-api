@@ -2,12 +2,7 @@
 
 Modern REST API backend for the [ModelSEED](https://modelseed.org) metabolic modeling platform. Replaces the legacy Perl-based ProbModelSEED JSON-RPC service with a Python FastAPI application.
 
-## Quick Start (5 minutes)
-
-### Prerequisites
-
-- Python 3.11+
-- A [BV-BRC](https://www.bv-brc.org) account (for PATRIC auth token)
+## Quick Start
 
 ### 1. Clone all required repos
 
@@ -20,7 +15,7 @@ git clone https://github.com/ModelSEED/modelseed-api.git
 # Modeling engine (MUST use cshenry fork, main branch)
 git clone -b main https://github.com/cshenry/ModelSEEDpy.git
 
-# KBase utility library
+# KBase utility library (private — requires kbase org access)
 git clone https://github.com/kbase/KBUtilLib.git
 
 # Data repos
@@ -29,7 +24,16 @@ git clone https://github.com/ModelSEED/ModelSEEDTemplates.git
 git clone https://github.com/kbaseapps/cb_annotation_ontology_api.git
 ```
 
-### 2. Install Python packages
+### 2a. Docker (recommended)
+
+```bash
+cd modelseed
+docker compose -f modelseed-api/docker-compose.yml up --build
+```
+
+Open http://localhost:8000/demo/ — done. All Python deps are installed inside the container.
+
+### 2b. Manual setup
 
 ```bash
 pip install -e ModelSEEDpy
@@ -37,7 +41,7 @@ pip install -e KBUtilLib
 pip install -e "modelseed-api[modeling]"
 ```
 
-### 3. Configure data paths
+Configure data paths:
 
 ```bash
 cd modelseed-api
@@ -48,13 +52,13 @@ MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH=$(realpath ../cb_annotation_ontology_a
 EOF
 ```
 
-### 4. Run the server
+Run the server:
 
 ```bash
 cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 5. Open in browser
+### 3. Open in browser
 
 | URL | What |
 |---|---|
@@ -63,7 +67,7 @@ cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
 | http://localhost:8000/redoc | ReDoc API docs |
 | http://localhost:8000/api/health | Health check |
 
-### 6. Get a PATRIC token
+### 4. Get a PATRIC token
 
 1. Log in to https://www.bv-brc.org
 2. Open browser console (F12)
@@ -117,6 +121,7 @@ All endpoints require a PATRIC token in the `Authorization` header.
 | `POST` | `/api/jobs/reconstruct` | Build model from BV-BRC genome ID |
 | `POST` | `/api/jobs/gapfill` | Gapfill a model |
 | `POST` | `/api/jobs/fba` | Run flux balance analysis |
+| `POST` | `/api/jobs/merge` | Merge multiple models |
 | `POST` | `/api/jobs/manage` | Delete/rerun jobs |
 
 ### Biochemistry (`/api/biochem`)
