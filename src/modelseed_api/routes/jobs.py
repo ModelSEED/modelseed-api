@@ -116,7 +116,7 @@ async def run_fba(
     """
     job_id = _dispatcher.dispatch(
         app="FluxBalanceAnalysis",
-        parameters={"model": request.model},
+        parameters={"model": request.model, "media": request.media},
         user=user.username,
         token=user.token,
     )

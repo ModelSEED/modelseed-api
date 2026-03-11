@@ -57,7 +57,7 @@ def _load_template(template_type: str):
 
     template = MSTemplateBuilder.from_dict(template_data).build()
 
-    # Add mock info attribute (templates loaded from files lack this)
+    # WORKAROUND 3/4: templates from local files lack .info attribute
     class _Info:
         def __init__(self, n):
             self.name = n
@@ -70,6 +70,7 @@ def _load_template(template_type: str):
 
 def _init_kwargs(token: str) -> dict:
     """Common kwargs for KBUtilLib initialization."""
+    # WORKAROUND 1/4: cobrakbase requires non-empty KB_AUTH_TOKEN
     os.environ.setdefault("KB_AUTH_TOKEN", "unused")
     return dict(
         config_file=False,
@@ -104,6 +105,7 @@ def reconstruct(
         output_path: Workspace path for output model
     """
     from kbutillib import BVBRCUtils, MSReconstructionUtils
+    # WORKAROUND 2/4: BVBRCUtils.save() needs KBase SDK NotebookUtils
     BVBRCUtils.save = lambda self, name, obj: None
 
     kwargs = _init_kwargs(token)
@@ -127,6 +129,7 @@ def reconstruct(
     self.update_state(state="PROGRESS", meta={"status": "Building model..."})
     output, mdlutl = recon.build_metabolic_model(
         genome=genome,
+        # WORKAROUND 4/4: classifier pickle files not available
         genome_classifier=None,
         core_template=core_template,
         gs_template_obj=gs_template_obj,

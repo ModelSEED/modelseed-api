@@ -259,10 +259,11 @@
     async function loadModel(ref) {
         panel('loading', 'Loading model data from workspace...');
         try {
-            const [data, gapfills, fbas] = await Promise.all([
+            const [data, gapfills, fbas, publicMedia] = await Promise.all([
                 apiFetch('/api/models/data?ref=' + encodeURIComponent(ref)),
                 apiFetch('/api/models/gapfills?ref=' + encodeURIComponent(ref)),
                 apiFetch('/api/models/fba?ref=' + encodeURIComponent(ref)).catch(() => []),
+                apiFetch('/api/media/public').catch(() => []),
             ]);
 
             const modelName = ref.split('/').pop();
@@ -279,10 +280,14 @@
                     <div class="stat-card"><div class="value">${gapfills.length}</div><div class="label">Gapfills</div></div>
                 </div>
 
-                <div class="btn-group">
+                <div class="btn-group" style="align-items:center">
                     <button class="btn btn-primary" onclick="exportModel('${esc(ref)}', 'json')">Export JSON</button>
                     <button class="btn btn-primary" onclick="exportModel('${esc(ref)}', 'sbml')">Export SBML</button>
                     <button class="btn btn-primary" onclick="exportModel('${esc(ref)}', 'cobra-json')">Export CobraPy JSON</button>
+                    <span style="margin-left:12px">Media:</span>
+                    <select id="model-media-select" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px">
+                        <option value="">Complete (no media)</option>
+                    </select>
                     <button class="btn btn-warning" onclick="submitGapfill('${esc(ref)}')">Run Gapfill</button>
                     <button class="btn btn-success" onclick="submitFBA('${esc(ref)}')">Run FBA</button>
                 </div>
@@ -337,6 +342,17 @@
             }
 
             panel('html', html);
+
+            // Populate media dropdown
+            const mediaSelect = document.getElementById('model-media-select');
+            if (mediaSelect && publicMedia.length > 0) {
+                for (const m of publicMedia) {
+                    const opt = document.createElement('option');
+                    opt.value = m.ref || m.path || '';
+                    opt.textContent = m.name || m.ref || 'Unknown';
+                    mediaSelect.appendChild(opt);
+                }
+            }
         } catch (err) {
             panel('error', 'Failed to load model: ' + err.message);
         }
@@ -378,11 +394,18 @@
         URL.revokeObjectURL(url);
     }
 
+    function getSelectedMedia() {
+        const sel = document.getElementById('model-media-select');
+        return sel ? sel.value || null : null;
+    }
+
     async function submitGapfill(ref) {
         const statusEl = document.getElementById('model-action-status');
-        statusEl.innerHTML = '<div class="job-status queued">Submitting gapfill job...</div>';
+        const media = getSelectedMedia();
+        const mediaLabel = media ? media.split('/').pop() : 'Complete';
+        statusEl.innerHTML = `<div class="job-status queued">Submitting gapfill job (media: ${mediaLabel})...</div>`;
         try {
-            const jobId = await apiPost('/api/jobs/gapfill', { model: ref });
+            const jobId = await apiPost('/api/jobs/gapfill', { model: ref, media });
             statusEl.innerHTML = `<div class="job-status running">Gapfill job submitted: ${jobId}<br>Check the Jobs tab for progress.</div>`;
         } catch (err) {
             statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;
@@ -407,9 +430,11 @@
 
     async function submitFBA(ref) {
         const statusEl = document.getElementById('model-action-status');
-        statusEl.innerHTML = '<div class="job-status queued">Submitting FBA job...</div>';
+        const media = getSelectedMedia();
+        const mediaLabel = media ? media.split('/').pop() : 'Complete';
+        statusEl.innerHTML = `<div class="job-status queued">Submitting FBA job (media: ${mediaLabel})...</div>`;
         try {
-            const jobId = await apiPost('/api/jobs/fba', { model: ref });
+            const jobId = await apiPost('/api/jobs/fba', { model: ref, media });
             statusEl.innerHTML = `<div class="job-status running">FBA job submitted: ${jobId}<br>Check the Jobs tab for progress.</div>`;
         } catch (err) {
             statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;

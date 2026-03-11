@@ -56,11 +56,15 @@ def main():
         from modelseed_api.config import settings
 
         # Set up environment for KBUtilLib
+        # WORKAROUND 1/4: cobrakbase.KBaseAPI() requires non-empty KB_AUTH_TOKEN
+        # even when we don't use KBase. Fix: add template_source=git to KBUtilLib.
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
 
         from kbutillib import BVBRCUtils, MSReconstructionUtils
 
-        # Patch BVBRCUtils.save (debug method from KBase SDK context)
+        # WORKAROUND 2/4: BVBRCUtils.build_kbase_genome_from_api() calls
+        # self.save("test_genome", genome) which needs KBase SDK NotebookUtils.
+        # Fix: Chris to remove or guard this debug line in KBUtilLib.
         BVBRCUtils.save = lambda self, name, obj: None
 
         init_kwargs = dict(
@@ -100,7 +104,9 @@ def main():
         with open(f"{templates_dir}/{gs_filename}") as f:
             gs_template = MSTemplateBuilder.from_dict(json.load(f)).build()
 
-        # Templates loaded from local files don't have .info — add mock
+        # WORKAROUND 3/4: MSTemplateBuilder.from_dict().build() doesn't set .info,
+        # but build_metabolic_model() references core_template.info at line 293.
+        # Fix: Chris to set .info in MSTemplateBuilder or KBUtilLib template loading.
         class _Info:
             def __init__(self, n):
                 self.name = n
@@ -113,6 +119,9 @@ def main():
         update_job(job_file, {"progress": "Building model..."})
         output, mdlutl = recon.build_metabolic_model(
             genome=genome,
+            # WORKAROUND 4/4: MSGenomeClassifier needs pickle/features files
+            # not available in KBUtilLib repo. Pass None + explicit template_type.
+            # Fix: Chris to provide classifier data files or add them to KBUtilLib.
             genome_classifier=None,
             core_template=core_template,
             gs_template_obj=gs_template,

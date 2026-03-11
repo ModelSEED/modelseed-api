@@ -54,6 +54,7 @@ class FBARequest(BaseModel):
     """Request to run flux balance analysis."""
 
     model: str  # workspace reference to model
+    media: Optional[str] = None  # media workspace reference
 
 
 class MergeModelsRequest(BaseModel):
