@@ -145,8 +145,6 @@ async def manage_gapfills(
         )
     except WorkspaceError as e:
         raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
-    except NotImplementedError as e:
-        raise HTTPException(status_code=501, detail=str(e))
 
 
 @router.get("/fba")
