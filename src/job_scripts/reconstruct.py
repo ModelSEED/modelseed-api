@@ -30,6 +30,8 @@ def update_job(job_file, updates):
         job_file.write_text(json.dumps(job, indent=2))
 
 
+
+
 def main():
     parser = argparse.ArgumentParser(description="Model reconstruction job")
     parser.add_argument("--job-id", required=True)
@@ -48,6 +50,8 @@ def main():
     genome_id = params.get("genome", "")
     template_type = params.get("template_type", "gn")
     atp_safe = params.get("atp_safe", True)
+    do_gapfill = params.get("gapfill", False)
+    media_ref = params.get("media")
     output_path = params.get("output_path")
 
     try:
@@ -141,7 +145,33 @@ def main():
             print(f"Reconstruction skipped: {output.get('Comments')}")
             return
 
-        # Step 5: Save model to PATRIC workspace
+        # Step 5: Gapfill if requested
+        gapfill_count = 0
+        if do_gapfill:
+            update_job(job_file, {"progress": "Loading media for gapfilling..."})
+
+            # Load media from workspace and convert to MSMedia object
+            ms_media = None
+            if media_ref:
+                from job_scripts.utils import fetch_workspace_object, workspace_media_to_msmedia
+                from modelseed_api.services.workspace_service import WorkspaceService
+                ws = WorkspaceService(args.token)
+                media_obj = fetch_workspace_object(ws, media_ref, args.token)
+                if media_obj:
+                    ms_media = workspace_media_to_msmedia(media_obj)
+
+            update_job(job_file, {"progress": "Running gapfilling..."})
+            from modelseedpy import MSGapfill
+            gapfiller = MSGapfill(
+                mdlutl.model,
+                default_target="bio1",
+                default_gapfill_templates=[gs_template],
+            )
+            solutions = gapfiller.run_gapfilling(media=ms_media)
+            gapfill_count = len(solutions) if solutions else 0
+            print(f"Gapfilling completed: {gapfill_count} solutions")
+
+        # Step 6: Save model to PATRIC workspace
         if output_path:
             update_job(job_file, {"progress": "Saving to workspace..."})
             from modelseed_api.services.workspace_service import WorkspaceService
@@ -165,6 +195,8 @@ def main():
             "genes": output.get("Model genes", len(mdlutl.model.genes)),
             "classification": output.get("Class", template_type),
             "core_gapfilling": output.get("Core GF", "NA"),
+            "gapfilled": do_gapfill,
+            "gapfill_solutions": gapfill_count,
         }
 
         update_job(job_file, {

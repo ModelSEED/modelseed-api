@@ -148,7 +148,7 @@ def reconstruct(
         self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
         from modelseedpy import MSGapfill
         template = _load_template(template_type)
-        gapfiller = MSGapfill(mdlutl.model, default_target="bio1", templates=[template])
+        gapfiller = MSGapfill(mdlutl.model, default_target="bio1", default_gapfill_templates=[template])
         gapfiller.run_gapfilling(media=media_ref)
 
     # Save model to workspace
@@ -218,7 +218,7 @@ def gapfill(
     template = _load_template(template_type)
 
     from modelseedpy import MSGapfill
-    gapfiller = MSGapfill(cobra_model, default_target="bio1", templates=[template])
+    gapfiller = MSGapfill(cobra_model, default_target="bio1", default_gapfill_templates=[template])
     solutions = gapfiller.run_gapfilling(media=media_ref)
 
     # Save gapfilled model back to workspace

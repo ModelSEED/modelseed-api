@@ -102,16 +102,25 @@ def main():
         with open(f"{settings.templates_path}/{gs_filename}") as f:
             template = MSTemplateBuilder.from_dict(json.load(f)).build()
 
-        # Step 4: Run gapfilling
+        # Step 4: Load media if specified
+        ms_media = None
+        if media_ref:
+            update_job(job_file, {"progress": "Loading media..."})
+            from job_scripts.utils import fetch_workspace_object, workspace_media_to_msmedia
+            media_obj = fetch_workspace_object(ws, media_ref, args.token)
+            if media_obj:
+                ms_media = workspace_media_to_msmedia(media_obj)
+
+        # Step 5: Run gapfilling
         update_job(job_file, {"progress": "Running gapfilling..."})
         from modelseedpy import MSGapfill
 
         gapfiller = MSGapfill(
             cobra_model,
             default_target="bio1",
-            templates=[template],
+            default_gapfill_templates=[template],
         )
-        solutions = gapfiller.run_gapfilling(media=media_ref)
+        solutions = gapfiller.run_gapfilling(media=ms_media)
 
         # Collect gapfilling results
         solutions_count = len(solutions) if solutions else 0

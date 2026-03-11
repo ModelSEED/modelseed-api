@@ -39,6 +39,8 @@ class ReconstructionRequest(BaseModel):
     genome: str  # BV-BRC genome ID (e.g., "83332.12")
     template_type: str = "gn"  # gn, gp, grampos, gramneg
     atp_safe: bool = True
+    gapfill: bool = False  # gapfill after reconstruction
+    media: Optional[str] = None  # media workspace ref for gapfilling
     output_path: Optional[str] = None  # workspace path for output model
 
 

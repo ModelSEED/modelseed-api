@@ -221,7 +221,7 @@
         panel('html', html);
     }
 
-    function showBuildModelForm() {
+    async function showBuildModelForm() {
         let html = `
             <div class="breadcrumb"><a onclick="renderModels(modelsCache)">My Models</a> &gt; Build New Model</div>
             <button class="back-btn" onclick="renderModels(modelsCache)">&larr; Back</button>
@@ -234,9 +234,15 @@
                 <label>Template:</label>
                 <select id="build-template">
                     <option value="gn" selected>Gram Negative (default)</option>
-                    <option value="gn">Gram Negative</option>
                     <option value="gp">Gram Positive</option>
                 </select>
+            </div>
+            <div class="form-group">
+                <label>Gapfill Media:</label>
+                <select id="build-media">
+                    <option value="">No gapfilling</option>
+                </select>
+                <div style="font-size:12px;color:#888;margin-top:4px">Select a media to automatically gapfill the model after reconstruction.</div>
             </div>
             <div class="btn-group">
                 <button class="btn btn-success" onclick="submitBuildModel()">Build Model</button>
@@ -244,16 +250,40 @@
             <div id="build-status"></div>
         `;
         panel('html', html);
+
+        // Populate media dropdown
+        try {
+            const raw = await apiFetch('/api/media/public');
+            const items = raw[Object.keys(raw)[0]] || [];
+            const sel = document.getElementById('build-media');
+            if (sel) {
+                for (const m of items) {
+                    const opt = document.createElement('option');
+                    opt.value = m[2] + m[0];
+                    opt.textContent = m[0];
+                    sel.appendChild(opt);
+                }
+            }
+        } catch (e) { /* media list optional */ }
     }
 
     async function submitBuildModel() {
         const genome = document.getElementById('build-genome').value.trim();
         if (!genome) { alert('Enter a genome ID'); return; }
         const template = document.getElementById('build-template').value;
+        const mediaSel = document.getElementById('build-media');
+        const media = mediaSel ? mediaSel.value || null : null;
+        const gapfill = !!media;
         const statusEl = document.getElementById('build-status');
-        statusEl.innerHTML = '<div class="job-status queued">Submitting job...</div>';
+        const label = gapfill ? ' + gapfill in ' + media.split('/').pop() : '';
+        statusEl.innerHTML = '<div class="job-status queued">Submitting reconstruction' + label + '...</div>';
         try {
-            const jobId = await apiPost('/api/jobs/reconstruct', { genome, template_type: template });
+            const jobId = await apiPost('/api/jobs/reconstruct', {
+                genome,
+                template_type: template,
+                gapfill: gapfill,
+                media: media,
+            });
             statusEl.innerHTML = `<div class="job-status running">Job submitted: ${jobId}<br>Check the Jobs tab for status.</div>`;
         } catch (err) {
             statusEl.innerHTML = `<div class="job-status failed">Error: ${err.message}</div>`;
@@ -347,13 +377,15 @@
 
             panel('html', html);
 
-            // Populate media dropdown
+            // Populate media dropdown from workspace ls response
+            // Response format: { "/path/to/media": [[name, type, path, ...], ...] }
             const mediaSelect = document.getElementById('model-media-select');
-            if (mediaSelect && publicMedia.length > 0) {
-                for (const m of publicMedia) {
+            if (mediaSelect && publicMedia && typeof publicMedia === 'object') {
+                const items = publicMedia[Object.keys(publicMedia)[0]] || [];
+                for (const m of items) {
                     const opt = document.createElement('option');
-                    opt.value = m.ref || m.path || '';
-                    opt.textContent = m.name || m.ref || 'Unknown';
+                    opt.value = m[2] + m[0];  // full path = parent path + name
+                    opt.textContent = m[0];    // display name
                     mediaSelect.appendChild(opt);
                 }
             }

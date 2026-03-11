@@ -115,7 +115,11 @@ class JobDispatcher:
             self.store.fail_job(job_id, f"Job script not found: {script_path}")
             return job_id
 
-        # Dispatch as subprocess
+        # Dispatch as subprocess (cwd = project root so .env is found)
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        log_dir = Path(settings.job_store_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"{job_id}.log"
         try:
             subprocess.Popen(
                 [
@@ -126,8 +130,9 @@ class JobDispatcher:
                     "--params", json.dumps(parameters),
                     "--job-store-dir", settings.job_store_dir,
                 ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                cwd=str(project_root),
+                stdout=open(log_file, "w"),
+                stderr=subprocess.STDOUT,
             )
         except Exception as e:
             self.store.fail_job(job_id, f"Failed to dispatch: {e}")

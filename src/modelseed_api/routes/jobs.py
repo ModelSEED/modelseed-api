@@ -75,6 +75,8 @@ async def reconstruct_model(
             "genome": request.genome,
             "template_type": request.template_type,
             "atp_safe": request.atp_safe,
+            "gapfill": request.gapfill,
+            "media": request.media,
             "output_path": request.output_path,
         },
         user=user.username,
