@@ -53,7 +53,9 @@ def main():
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from modelseed_api.config import settings
         from modelseed_api.services.workspace_service import WorkspaceService
-        from modelseed_api.services.export_service import workspace_model_to_cobra
+
+        # WORKAROUND: cobrakbase.KBaseAPI() requires non-empty KB_AUTH_TOKEN
+        os.environ.setdefault("KB_AUTH_TOKEN", "unused")
 
         # Step 1: Fetch model from workspace
         update_job(job_file, {"progress": "Loading model..."})
@@ -86,7 +88,9 @@ def main():
         # Step 2: Load model as FBAModel (preserves workspace format for save-back)
         update_job(job_file, {"progress": "Converting model..."})
         from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
+        from modelseedpy.core.msmodelutl import MSModelUtil
         fba_model = FBAModelBuilder(model_obj).build()
+        mdlutl = MSModelUtil.get(fba_model)
 
         # Step 3: Load template
         update_job(job_file, {"progress": "Loading template..."})
@@ -121,20 +125,31 @@ def main():
             default_target="bio1",
             default_gapfill_templates=[template],
         )
-        solutions = gapfiller.run_gapfilling(media=ms_media)
+        # run_gapfilling returns a single solution dict or None
+        solution = gapfiller.run_gapfilling(media=ms_media)
 
-        # Collect gapfilling results
-        solutions_count = len(solutions) if solutions else 0
+        solutions_count = 0
         added_reactions = []
-        if solutions:
-            for sol in solutions:
-                if hasattr(sol, "reactions"):
-                    added_reactions.extend([r.id for r in sol.reactions])
+        if solution:
+            # Integrate solution into model (adds reactions, sets bounds,
+            # assigns genes) and populates mdlutl.integrated_gapfillings
+            gapfiller.integrate_gapfill_solution(solution)
+            solutions_count = 1
+            # Collect added reaction IDs from the solution
+            for rxn_id in solution.get("new", {}):
+                added_reactions.append(rxn_id)
+            for rxn_id in solution.get("reversed", {}):
+                added_reactions.append(rxn_id)
 
         # Step 6: Save gapfilled model back to workspace
         if solutions_count > 0:
             update_job(job_file, {"progress": "Saving gapfilled model..."})
-            model_data = json.dumps(fba_model.get_data())
+            ws_data = fba_model.get_data()
+
+            # Persist gapfilling solution data to model object
+            mdlutl.create_kb_gapfilling_data(ws_data)
+
+            model_data = json.dumps(ws_data)
             ws.create({
                 "objects": [[
                     f"{model_ref}/model",
@@ -144,12 +159,15 @@ def main():
                 ]],
                 "overwrite": 1,
             })
-            # Update folder metadata with new reaction count
+
+            # Update folder metadata with counts from the model object
+            n_gapfillings = len(ws_data.get("gapfillings", []))
             try:
                 ws.update_metadata({
                     "objects": [[model_ref, {
                         "num_reactions": str(len(fba_model.reactions)),
                         "num_compounds": str(len(fba_model.metabolites)),
+                        "integrated_gapfills": str(n_gapfillings),
                     }]],
                 })
             except Exception:
@@ -161,6 +179,7 @@ def main():
             "model_ref": model_ref,
             "solutions_count": solutions_count,
             "added_reactions": len(added_reactions),
+            "added_reaction_ids": added_reactions,
         }
 
         update_job(job_file, {
@@ -183,4 +202,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        pass
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        try:
+            _args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
+            _jf = Path(_args.get("--job-store-dir", "/tmp/modelseed-jobs")) / f"{_args.get('--job-id', 'unknown')}.json"
+            if _jf.exists():
+                update_job(_jf, {"status": "failed", "error": str(e)})
+        except Exception:
+            pass

@@ -20,6 +20,14 @@ from modelseed_api.schemas.models import (
 from modelseed_api.services.workspace_service import WorkspaceService
 
 
+def _safe_int(val, default=0):
+    """Safely convert a value to int, returning default on failure."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 class ModelService:
     """Service for model-related workspace operations.
 
@@ -77,25 +85,25 @@ class ModelService:
                         "genome_ref": user_meta.get("genome_ref"),
                         "template_ref": user_meta.get("template_ref"),
                         "rundate": user_meta.get("rundate", obj_meta[3]),
-                        "fba_count": int(user_meta.get("fba_count", 0)),
-                        "integrated_gapfills": int(user_meta.get("integrated_gapfills", 0)),
-                        "unintegrated_gapfills": int(
+                        "fba_count": _safe_int(user_meta.get("fba_count", 0)),
+                        "integrated_gapfills": _safe_int(user_meta.get("integrated_gapfills", 0)),
+                        "unintegrated_gapfills": _safe_int(
                             user_meta.get("unintegrated_gapfills", 0)
                         ),
-                        "gene_associated_reactions": int(
+                        "gene_associated_reactions": _safe_int(
                             user_meta.get("gene_associated_reactions", 0)
                         ),
-                        "gapfilled_reactions": int(
+                        "gapfilled_reactions": _safe_int(
                             user_meta.get("gapfilled_reactions", 0)
                         ),
-                        "num_genes": int(user_meta.get("num_genes", 0)),
-                        "num_compounds": int(user_meta.get("num_compounds", 0)),
-                        "num_reactions": int(user_meta.get("num_reactions", 0)),
-                        "num_biomasses": int(user_meta.get("num_biomasses", 0)),
-                        "num_biomass_compounds": int(
+                        "num_genes": _safe_int(user_meta.get("num_genes", 0)),
+                        "num_compounds": _safe_int(user_meta.get("num_compounds", 0)),
+                        "num_reactions": _safe_int(user_meta.get("num_reactions", 0)),
+                        "num_biomasses": _safe_int(user_meta.get("num_biomasses", 0)),
+                        "num_biomass_compounds": _safe_int(
                             user_meta.get("num_biomass_compounds", 0)
                         ),
-                        "num_compartments": int(user_meta.get("num_compartments", 0)),
+                        "num_compartments": _safe_int(user_meta.get("num_compartments", 0)),
                         "status": user_meta.get("status"),
                         "expression_data": user_meta.get("expression_data", []),
                     }
@@ -314,40 +322,67 @@ class ModelService:
     def list_gapfill_solutions(self, model_ref: str) -> list[dict]:
         """List gapfilling solutions for a model.
 
-        Gapfill data is stored as metadata on the model folder or
-        within the model object itself.
+        Gapfill solution data can be stored in two formats:
+        1. Legacy KBase format: gapfillingSolutions array on each gapfilling entry
+        2. ModelSEEDpy format: reaction-level gapfill_data on modelreactions,
+           keyed by gapfill ID (created by MSModelUtil.create_kb_gapfilling_data)
         """
         model_path = f"{model_ref}/model"
         result = self.ws.get({"objects": [model_path]})
 
         model_obj = self._parse_ws_data(result)
 
+        # Build index: gapfill_id -> [{reaction, direction, compartment}]
+        # from modelreactions gapfill_data (ModelSEEDpy format)
+        gf_rxn_index = {}
+        for rxn in model_obj.get("modelreactions", []):
+            gf_data = rxn.get("gapfill_data", {})
+            for gfid, sol_data in gf_data.items():
+                if gfid not in gf_rxn_index:
+                    gf_rxn_index[gfid] = []
+                # sol_data is {"0": [direction, integrated_flag, features]}
+                for sol_idx, sol_info in sol_data.items():
+                    direction = sol_info[0] if isinstance(sol_info, list) else "="
+                    # Extract compartment from reaction ID (e.g., rxn00001_c0 -> c0)
+                    rxn_id = rxn.get("id", "")
+                    compartment = ""
+                    if "_" in rxn_id:
+                        compartment = rxn_id.rsplit("_", 1)[-1]
+                    gf_rxn_index[gfid].append({
+                        "reaction": rxn_id,
+                        "direction": direction,
+                        "compartment": compartment,
+                    })
+
         gapfillings = []
         for gf in model_obj.get("gapfillings", []):
+            gfid = gf.get("id", "")
+
+            # Try legacy format first (gapfillingSolutions array)
             solutions = []
             for sol in gf.get("gapfillingSolutions", gf.get("solutions", [])):
                 sol_rxns = []
                 for rxn in sol.get("gapfillingSolutionReactions", sol.get("reactions", [])):
-                    sol_rxns.append(
-                        {
-                            "reaction": rxn.get("reaction_ref", rxn.get("reaction", "")),
-                            "direction": rxn.get("direction", "="),
-                            "compartment": rxn.get("compartment_ref", rxn.get("compartment", "")),
-                        }
-                    )
+                    sol_rxns.append({
+                        "reaction": rxn.get("reaction_ref", rxn.get("reaction", "")),
+                        "direction": rxn.get("direction", "="),
+                        "compartment": rxn.get("compartment_ref", rxn.get("compartment", "")),
+                    })
                 solutions.append(sol_rxns)
 
-            gapfillings.append(
-                {
-                    "rundate": gf.get("rundate", ""),
-                    "id": gf.get("id", ""),
-                    "ref": gf.get("ref", f"{model_ref}/gapfill.{gf.get('id', '')}"),
-                    "media_ref": gf.get("media_ref", ""),
-                    "integrated": gf.get("integrated", False),
-                    "integrated_solution": gf.get("integrated_solution", 0),
-                    "solution_reactions": solutions,
-                }
-            )
+            # Fall back to modelreactions gapfill_data (ModelSEEDpy format)
+            if not solutions and gfid in gf_rxn_index:
+                solutions = [gf_rxn_index[gfid]]
+
+            gapfillings.append({
+                "rundate": gf.get("rundate", ""),
+                "id": gfid,
+                "ref": gf.get("ref", f"{model_ref}/gapfill.{gfid}"),
+                "media_ref": gf.get("media_ref", ""),
+                "integrated": gf.get("integrated", False),
+                "integrated_solution": gf.get("integrated_solution", 0),
+                "solution_reactions": solutions,
+            })
 
         return gapfillings
 
@@ -397,7 +432,11 @@ class ModelService:
                 self._unintegrate_gapfill(gf_entry, model_reactions)
                 results[gf_id] = self._format_gapfill_entry(gf_entry, model_ref)
 
-        # Save modified model back to workspace
+        # Only save if no errors occurred (atomic operation)
+        errors = {k: v for k, v in results.items() if "error" in v}
+        if errors:
+            raise ValueError(f"Gapfill management errors: {errors}")
+
         model_obj["gapfillings"] = gapfillings
         model_obj["modelreactions"] = model_reactions
         self._save_model(model_ref, model_obj)

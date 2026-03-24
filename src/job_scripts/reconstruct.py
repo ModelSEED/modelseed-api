@@ -167,13 +167,19 @@ def main():
                 default_target="bio1",
                 default_gapfill_templates=[gs_template],
             )
-            solutions = gapfiller.run_gapfilling(media=ms_media)
-            gapfill_count = len(solutions) if solutions else 0
-            print(f"Gapfilling completed: {gapfill_count} solutions")
+            # run_gapfilling returns a single solution dict or None
+            solution = gapfiller.run_gapfilling(media=ms_media)
+            if solution:
+                # Integrate solution into the model (adds reactions, sets bounds,
+                # assigns genes) and populates mdlutl.integrated_gapfillings
+                gapfiller.integrate_gapfill_solution(solution)
+                gapfill_count = 1
+            print(f"Gapfilling completed: {gapfill_count} solution(s)")
 
-        # Compute model stats
-        n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
-        n_genes = output.get("Model genes", len(mdlutl.model.genes))
+        # Compute model stats (use live model counts — may differ from
+        # initial output if gapfilling added reactions)
+        n_reactions = len(mdlutl.model.reactions)
+        n_genes = len(mdlutl.model.genes)
         n_metabolites = len(mdlutl.model.metabolites)
         n_compartments = len(mdlutl.model.compartments)
         classification = output.get("Class", template_type)
@@ -192,6 +198,12 @@ def main():
                 mdlutl.model = CobraModelConverter(mdlutl.model).build()
             mdlutl.save_attributes()
             ws_data = mdlutl.model.get_data()
+
+            # Persist gapfilling solution data to model object so it's
+            # available via list_gapfill_solutions() and the detail view
+            if gapfill_count > 0:
+                mdlutl.create_kb_gapfilling_data(ws_data)
+
             model_data = json.dumps(ws_data)
 
             n_biomasses = len(ws_data.get("biomasses", []))
@@ -238,9 +250,12 @@ def main():
             "metabolites": n_metabolites,
             "genes": n_genes,
             "classification": classification,
-            "core_gapfilling": output.get("Core GF", "NA"),
+            "core_gapfilling": output.get("Core GF", 0),
             "gapfilled": do_gapfill,
             "gapfill_solutions": gapfill_count,
+            "atp_safe": atp_safe,
+            "template_type": template_type,
+            "reconstruction_output": output,
         }
 
         update_job(job_file, {
@@ -263,4 +278,20 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Outer safety net: if main() raises before its own try/except
+    # (e.g., arg parsing failure), still update the job file
+    try:
+        main()
+    except SystemExit:
+        pass  # main() calls sys.exit(1) on failure — already handled
+    except Exception as e:
+        # Last resort: try to update job file from sys.argv
+        import traceback
+        traceback.print_exc()
+        try:
+            _args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
+            _jf = Path(_args.get("--job-store-dir", "/tmp/modelseed-jobs")) / f"{_args.get('--job-id', 'unknown')}.json"
+            if _jf.exists():
+                update_job(_jf, {"status": "failed", "error": str(e)})
+        except Exception:
+            pass

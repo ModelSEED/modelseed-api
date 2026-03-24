@@ -394,22 +394,41 @@
             html += '</table>';
 
             if (gapfills.length > 0) {
-                html += '<h3 style="margin-top:20px">Gapfill Solutions</h3><table><tr><th>ID</th><th>Media</th><th>Integrated</th><th>Solutions</th><th>Actions</th></tr>';
+                html += '<h3 style="margin-top:20px">Gapfill Solutions</h3><table><tr><th>ID</th><th>Media</th><th>Integrated</th><th>Reactions</th><th>Actions</th></tr>';
                 for (const gf of gapfills) {
                     const mediaName = gf.media_ref ? gf.media_ref.split('/').pop() : 'Complete';
                     const toggleCmd = gf.integrated ? 'U' : 'I';
                     const toggleLabel = gf.integrated ? 'Unintegrate' : 'Integrate';
                     const toggleClass = gf.integrated ? 'btn-warning' : 'btn-success';
+                    // Count total reactions across all solutions
+                    let rxnCount = 0;
+                    let rxnDetails = '';
+                    if (gf.solution_reactions && gf.solution_reactions.length > 0) {
+                        for (const sol of gf.solution_reactions) {
+                            rxnCount += Array.isArray(sol) ? sol.length : 0;
+                            if (Array.isArray(sol)) {
+                                for (const r of sol) {
+                                    const rid = r.reaction ? r.reaction.split('/').pop() : '';
+                                    const cpt = r.compartment ? r.compartment.split('/').pop() : '';
+                                    rxnDetails += `<tr><td style="font-size:11px">${esc(rid)}</td><td style="font-size:11px">${esc(r.direction||'=')}</td><td style="font-size:11px">${esc(cpt)}</td></tr>`;
+                                }
+                            }
+                        }
+                    }
+                    const gfSafeId = gf.id.replace(/[^a-zA-Z0-9]/g, '_');
                     html += `<tr>
                         <td>${esc(gf.id)}</td>
                         <td>${esc(mediaName)}</td>
                         <td>${gf.integrated ? '<span class="badge-sm badge-green">Yes</span>' : '<span class="badge-sm badge-orange">No</span>'}</td>
-                        <td>${gf.solution_reactions ? gf.solution_reactions.length : 0} solutions</td>
+                        <td>${rxnCount > 0 ? `<a href="#" onclick="document.getElementById('gf_${gfSafeId}').style.display=document.getElementById('gf_${gfSafeId}').style.display==='none'?'':'none';return false">${rxnCount} reactions</a>` : '0 reactions'}</td>
                         <td>
                             <button class="btn ${toggleClass}" style="font-size:11px;padding:2px 8px" onclick="manageGapfill('${esc(ref)}','${esc(gf.id)}','${toggleCmd}')">${toggleLabel}</button>
                             <button class="btn btn-danger" style="font-size:11px;padding:2px 8px" onclick="manageGapfill('${esc(ref)}','${esc(gf.id)}','D')">Delete</button>
                         </td>
                     </tr>`;
+                    if (rxnCount > 0) {
+                        html += `<tr id="gf_${gfSafeId}" style="display:none"><td colspan="5"><table style="margin:0;font-size:11px"><tr><th>Reaction</th><th>Direction</th><th>Compartment</th></tr>${rxnDetails}</table></td></tr>`;
+                    }
                 }
                 html += '</table>';
             }
