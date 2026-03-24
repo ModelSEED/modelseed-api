@@ -40,7 +40,7 @@ async def check_jobs(
     Returns a mapping of job_id -> Task for the authenticated user.
     Frontend polls this every 4 seconds.
     """
-    job_ids = ids.split(",") if ids else None
+    job_ids = [x.strip() for x in ids.split(",") if x.strip()] if ids else None
     jobs = _job_store.get_jobs(user.username, job_ids=job_ids)
 
     # Filter by status
