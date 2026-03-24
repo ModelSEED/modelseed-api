@@ -138,6 +138,11 @@ def reconstruct(
     bvbrc = BVBRCUtils(**kwargs)
     kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
 
+    # Extract organism/taxonomy info from genome
+    organism_name = kbase_genome.get("scientific_name", "")
+    taxonomy = kbase_genome.get("taxonomy", "")
+    domain = kbase_genome.get("domain", "")
+
     # Step 2: Convert to MSGenome
     self.update_state(state="PROGRESS", meta={"status": "Converting genome..."})
     recon = MSReconstructionUtils(**kwargs)
@@ -217,11 +222,14 @@ def reconstruct(
 
         folder_meta = {
             "id": genome_id,
-            "name": genome_id,
+            "name": organism_name or genome_id,
             "source_id": genome_id,
             "source": "ModelSEED",
             "type": classification,
             "genome_ref": genome_id,
+            "organism_name": organism_name,
+            "taxonomy": taxonomy,
+            "domain": domain,
             "num_reactions": str(n_reactions),
             "num_compounds": str(n_metabolites),
             "num_genes": str(n_genes),
