@@ -69,17 +69,10 @@ class JobDispatcher:
             self.store.fail_job(job_id, f"No Celery task for app: {app}")
             return job_id
 
-        # Build task kwargs from parameters
-        task_kwargs = {"token": token, **parameters}
-
-        # Send to Celery
-        result = celery_app.send_task(task_name, kwargs=task_kwargs)
-
-        # Use the Celery task ID as our job ID
-        job_id = result.id
+        # Create local job record BEFORE sending to Celery to avoid race
+        # condition where task completes before record exists
+        job_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
-
-        # Also create a local job record for status tracking
         self.store.create_job(
             job_id=job_id,
             app=app,
@@ -87,6 +80,12 @@ class JobDispatcher:
             user=user,
             submit_time=now,
         )
+
+        # Build task kwargs from parameters
+        task_kwargs = {"token": token, **parameters}
+
+        # Send to Celery with our pre-generated job ID
+        celery_app.send_task(task_name, kwargs=task_kwargs, task_id=job_id)
 
         return job_id
 
