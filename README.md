@@ -23,6 +23,9 @@ git clone -b main https://github.com/cshenry/ModelSEEDpy.git
 # KBase utility library
 git clone https://github.com/cshenry/KBUtilLib.git
 
+# KBase/cobra bridge -- MUST use Fxe fork, master branch (pip version is too old)
+git clone https://github.com/Fxe/cobrakbase.git
+
 # Data repos
 git clone -b dev https://github.com/ModelSEED/ModelSEEDDatabase.git
 git clone https://github.com/ModelSEED/ModelSEEDTemplates.git
@@ -41,6 +44,7 @@ Open http://localhost:8000/demo/ -- all Python dependencies are installed inside
 ### 2b. Manual setup
 
 ```bash
+pip install -e cobrakbase
 pip install -e ModelSEEDpy
 pip install -e KBUtilLib
 pip install -e "modelseed-api[modeling]"
@@ -71,6 +75,22 @@ cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
 | http://localhost:8000/docs | Swagger API docs (interactive) |
 | http://localhost:8000/redoc | ReDoc API docs |
 | http://localhost:8000/api/health | Health check |
+
+### Live deployment (poplar)
+
+The API is deployed on poplar via Docker:
+
+| URL | Description |
+|-----|-------------|
+| http://poplar.cels.anl.gov:8000/demo/ | Demo dashboard |
+| http://poplar.cels.anl.gov:8000/docs | Swagger API docs |
+| http://poplar.cels.anl.gov:8000/api/health | Health check |
+
+Source and data repos are at `/scratch/jplfaria/repos/`. To redeploy after code changes:
+
+```bash
+cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml up --build -d
+```
 
 ### 4. Get a PATRIC token
 
@@ -182,7 +202,7 @@ Demo features:
 | [ModelSEED/ModelSEEDTemplates](https://github.com/ModelSEED/ModelSEEDTemplates) | **main** | Model templates v7.0 (Core, GramPos, GramNeg) | v7.0 templates are only on main |
 | [cshenry/KBUtilLib](https://github.com/cshenry/KBUtilLib) | **main** | BVBRCUtils (genome fetch), MSReconstructionUtils (model build) | Main utility library for BV-BRC integration |
 | [kbaseapps/cb_annotation_ontology_api](https://github.com/kbaseapps/cb_annotation_ontology_api) | **main** | Ontology data for genome annotation | Required by BVBRCUtils for annotation mapping |
-| [kbase/cobrakbase](https://github.com/kbase/cobrakbase) | (pip dep) | KBase object factory (genome dict to MSGenome) | Installed automatically via pip |
+| [Fxe/cobrakbase](https://github.com/Fxe/cobrakbase) | **master** | KBase object factory (genome dict to MSGenome), FBAModel builder | 0.4.0 (master) is required; 0.3.0 on pip lacks `KBaseObjectFactory._build_object()` |
 
 ### Python Packages
 
@@ -240,7 +260,30 @@ recon.build_metabolic_model(genome, classifier=None, gs_template='gn')
 os.environ['KB_AUTH_TOKEN'] = 'unused'
 ```
 
-### Planned upstream fix
+### 5. Gapfill solution integration (ModelSEEDpy)
+
+`MSGapfill.run_gapfilling()` returns a raw solution dict but does **not** automatically integrate it into the model. The job scripts must explicitly call `integrate_gapfill_solution()` to add reactions, then `MSModelUtil.create_kb_gapfilling_data(ws_data)` to persist solution metadata to the workspace-format model dict. Without these calls, models appear to have zero gapfillings even though gapfilling ran successfully.
+
+```python
+solution = gapfiller.run_gapfilling(media=ms_media)
+if solution:
+    gapfiller.integrate_gapfill_solution(solution)  # adds reactions to model
+    # ... later, before saving:
+    ws_data = model.get_data()
+    mdlutl.create_kb_gapfilling_data(ws_data)  # writes gapfillings array
+```
+
+### 6. PATRIC workspace metadata persistence
+
+`ws.create()` does not reliably persist user metadata passed in the create tuple. An explicit `ws.update_metadata()` call is needed after creating modelfolder objects:
+
+```python
+ws.create({"objects": [[path, "modelfolder", folder_meta, ""]], "overwrite": 1})
+# Metadata may not persist from create — set explicitly:
+ws.update_metadata({"objects": [[path, folder_meta]]})
+```
+
+### Planned upstream fixes
 
 Chris Henry has agreed to add a `template_source="git"` configuration parameter to KBUtilLib that would load templates from local git repos, eliminating workarounds 2 and 4.
 
@@ -299,9 +342,32 @@ Available templates (v7.0):
 
 Two modes controlled by the `MODELSEED_USE_CELERY` setting (default: `false`):
 
-**Local (development):** Jobs run as subprocesses. Job state is stored as JSON files in `/tmp/modelseed-jobs/`. No external infrastructure needed.
+**Local (development):** Jobs run as subprocesses via `src/job_scripts/`. Job state is stored as JSON files in `/tmp/modelseed-jobs/`. No external infrastructure needed.
 
-**Production:** Jobs are dispatched via Celery to a Redis broker at `redis://bioseed_redis:6379/10`. Queue name: `modelseed`. Monitor at `http://poplar.cels.anl.gov:5555/` (Flower).
+**Production (Celery+Redis):** Jobs are dispatched via Celery to a shared Redis broker. The Celery task implementations in `src/modelseed_api/jobs/tasks.py` mirror the subprocess job scripts for full parity.
+
+| Setting | Value |
+|---------|-------|
+| Broker | `redis://bioseed_redis:6379/10` |
+| Queue | `modelseed` |
+| Time limit | 4 hours |
+| Monitoring | `http://poplar.cels.anl.gov:5555/` (Flower) |
+
+To enable Celery mode, set `MODELSEED_USE_CELERY=true` in `.env`. The Redis broker must be reachable. Start the worker:
+
+```bash
+cd src && celery -A modelseed_api.jobs.celery_app worker -Q modelseed --loglevel=info
+```
+
+### Celery readiness status
+
+The Celery tasks (`tasks.py`) are at **full parity** with the subprocess job scripts:
+
+- **reconstruct**: Fetches genome, builds model, gapfills (optional), saves to workspace with metadata
+- **gapfill**: Loads model from workspace, runs MSGapfill, integrates solution, saves back with gapfill data
+- **fba**: Loads model, runs cobra optimize, returns flux results
+
+The dispatcher creates job records BEFORE sending to Celery to avoid race conditions with fast-completing tasks.
 
 
 ## Project Structure
@@ -358,6 +424,22 @@ All settings are loaded from environment variables with the `MODELSEED_` prefix,
 | `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
 
 
+## Docker-Specific Challenges
+
+Building the Docker image requires care because several dependencies are not available from pip in the correct versions. The Dockerfile handles these automatically, but they are documented here for troubleshooting.
+
+| Challenge | Symptom | Solution in Dockerfile |
+|-----------|---------|----------------------|
+| cobrakbase 0.3.0 (pip) is too old | `'KBaseObjectFactory' object has no attribute '_build_object'` | Install from local clone of `Fxe/cobrakbase` master (0.4.0) |
+| cobrakbase reads token from file, not env var | `missing token value or ~/.kbase/token file` | `RUN mkdir -p /root/.kbase && echo "unused" > /root/.kbase/token` |
+| ModelSEEDpy must be cshenry fork | Missing `ModelSEEDBiochem.get(path=)`, wrong API signatures | Install from local clone of `cshenry/ModelSEEDpy` main |
+| pip git installs need git binary | `pip install git+https://...` fails | `apt-get install git` (though we use local clones instead) |
+| Install order matters | Import errors from circular or missing deps | Install order: cobrakbase → ModelSEEDpy → KBUtilLib |
+| Docker layer caching hides changes | Old code persists despite rebuilds | `docker compose down && docker rmi <image> && docker compose build --no-cache` |
+
+The build context is the **parent directory** containing all sibling repos (not the `modelseed-api/` directory itself). This is set via `context: ..` in `docker-compose.yml`.
+
+
 ## Remaining Work
 
 ### Phase 2 features
@@ -366,21 +448,27 @@ All settings are loaded from environment variables with the `MODELSEED_` prefix,
 - PlantSEED endpoints (pipeline, annotate, features, compare regions)
 - Import KBase models
 - Delete FBA studies
+- Reconstruction details endpoint (`GET /api/models/reconstruction?ref=`)
 
 ### Production hardening
 
 - CI/CD pipeline
 - Integration tests against dev workspace
 - Structured logging
-- Celery+Redis deployment on poplar
+- Celery+Redis deployment on poplar (tasks are ready, infrastructure needed)
 - Health check enhancements
+- Job store file locking for concurrent access
 
-### Upstream improvements (KBUtilLib)
+### Upstream improvements needed
 
-- `template_source="git"` config to load templates from local repos (eliminates workarounds 2 and 4)
-- Optional `save()` method (eliminates workaround 1)
-- Genome classifier files included in repo or made optional (eliminates workaround 3)
-- PR #24 pending: PATRIC media TSV parsing support in PatricWSUtils
+| Repo | Issue | Workaround |
+|------|-------|------------|
+| KBUtilLib | No `template_source="git"` config | Mock `.info` attribute + dummy `KB_AUTH_TOKEN` (workarounds 2, 4) |
+| KBUtilLib | `BVBRCUtils.save()` requires NotebookUtils | No-op monkey-patch (workaround 1) |
+| KBUtilLib | `MSGenomeClassifier` needs pickle files not in repo | Pass `classifier=None` + explicit template type (workaround 3) |
+| KBUtilLib | PR #24 pending: PATRIC media TSV parsing | Custom TSV parser in `job_scripts/utils.py` |
+| ModelSEEDpy | `run_gapfilling()` doesn't auto-integrate | Explicit `integrate_gapfill_solution()` + `create_kb_gapfilling_data()` calls (workaround 5) |
+| PATRIC WS | `ws.create()` doesn't persist metadata | Explicit `ws.update_metadata()` after create (workaround 6) |
 
 
 ## License

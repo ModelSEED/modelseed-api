@@ -27,6 +27,7 @@ modeling = [
     "kbutillib",
     "modelseedpy>=0.4.0",
     "cobra>=0.29.0",
+    "cobrakbase",
 ]
 dev = [
     "pytest>=7.0.0",
