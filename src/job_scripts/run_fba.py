@@ -114,4 +114,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        pass
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        try:
+            _args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
+            _jf = Path(_args.get("--job-store-dir", "/tmp/modelseed-jobs")) / f"{_args.get('--job-id', 'unknown')}.json"
+            if _jf.exists():
+                update_job(_jf, {"status": "failed", "error": str(e)})
+        except Exception:
+            pass

@@ -29,7 +29,14 @@ def _get_ws(user: AuthUser) -> WorkspaceService:
 
 
 def _handle_ws_error(e: WorkspaceError):
-    raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+    msg = e.message.lower()
+    if "permission" in msg or "not authorized" in msg or e.code == 403:
+        status = 403
+    elif "not found" in msg or "does not exist" in msg or e.code == 404:
+        status = 404
+    else:
+        status = 502
+    raise HTTPException(status_code=status, detail=f"Workspace error: {e.message}")
 
 
 @router.post("/ls")

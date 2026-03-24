@@ -11,6 +11,15 @@ from modelseed_api.services.workspace_service import WorkspaceError, WorkspaceSe
 router = APIRouter()
 
 
+def _ws_status(e: WorkspaceError) -> int:
+    msg = e.message.lower()
+    if "permission" in msg or "not authorized" in msg or e.code == 403:
+        return 403
+    if "not found" in msg or "does not exist" in msg or e.code == 404:
+        return 404
+    return 502
+
+
 @router.get("/public")
 async def list_public_media(
     user: AuthUser = Depends(get_current_user),
@@ -23,7 +32,7 @@ async def list_public_media(
     try:
         return ws.ls({"paths": [settings.public_media_path]})
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.get("/mine")
@@ -39,7 +48,7 @@ async def list_my_media(
         # User may not have a media folder yet
         if "not found" in e.message.lower() or "does not exist" in e.message.lower():
             return {media_path: []}
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.get("/export")
@@ -55,4 +64,4 @@ async def export_media(
             raise HTTPException(status_code=404, detail=f"Media not found: {ref}")
         return result
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")

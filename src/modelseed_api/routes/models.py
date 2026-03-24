@@ -18,6 +18,15 @@ from modelseed_api.services.workspace_service import WorkspaceError
 router = APIRouter()
 
 
+def _ws_status(e: WorkspaceError) -> int:
+    msg = e.message.lower()
+    if "permission" in msg or "not authorized" in msg or e.code == 403:
+        return 403
+    if "not found" in msg or "does not exist" in msg or e.code == 404:
+        return 404
+    return 502
+
+
 def _get_svc(user: AuthUser) -> ModelService:
     return ModelService(user.token)
 
@@ -36,7 +45,7 @@ async def list_models(
     try:
         return svc.list_models(path=path, username=user.username)
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.get("/data")
@@ -49,7 +58,7 @@ async def get_model(
     try:
         return svc.get_model(ref)
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -64,7 +73,7 @@ async def delete_model(
     try:
         return svc.delete_model(ref)
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.post("/copy")
@@ -78,7 +87,7 @@ async def copy_model(
         dest = request.destination or f"/{user.username}/modelseed/{request.destname or 'copy'}"
         return svc.copy_model(request.model, dest)
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.get("/export")
@@ -92,6 +101,7 @@ async def export_model(
     Supported formats: json, sbml, cobrapy.
     """
     svc = _get_svc(user)
+    format = format.lower()
     try:
         if format == "json":
             return svc.get_model(ref)
@@ -114,7 +124,7 @@ async def export_model(
                 detail=f"Unsupported format '{format}'. Use: json, sbml, cobra-json",
             )
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -129,7 +139,7 @@ async def list_gapfills(
     try:
         return svc.list_gapfill_solutions(ref)
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.post("/gapfills/manage")
@@ -144,7 +154,9 @@ async def manage_gapfills(
             request.model, request.commands, request.selected_solutions
         )
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/fba")
@@ -157,7 +169,7 @@ async def list_fba_studies(
     try:
         return svc.list_fba_studies(ref)
     except WorkspaceError as e:
-        raise HTTPException(status_code=502, detail=f"Workspace error: {e.message}")
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
 @router.get("/edits")

@@ -39,8 +39,8 @@ class WSListRequest(BaseModel):
     """Request to list workspace contents."""
 
     paths: list[str]
-    recursive: bool = False
-    excludeDirectories: bool = False
+    recursive: Optional[bool] = None
+    excludeDirectories: Optional[bool] = None
 
 
 class WSGetRequest(BaseModel):
@@ -57,8 +57,8 @@ class WSCreateRequest(BaseModel):
     """
 
     objects: list[list[Any]]
-    createUploadNodes: bool = False
-    overwrite: bool = False
+    createUploadNodes: Optional[bool] = None
+    overwrite: Optional[bool] = None
 
 
 class WSCopyRequest(BaseModel):
@@ -68,17 +68,17 @@ class WSCopyRequest(BaseModel):
     """
 
     objects: list[list[str]]
-    move: bool = False
-    recursive: bool = False
-    overwrite: bool = False
+    move: Optional[bool] = None
+    recursive: Optional[bool] = None
+    overwrite: Optional[bool] = None
 
 
 class WSDeleteRequest(BaseModel):
     """Request to delete workspace objects."""
 
     objects: list[str]
-    deleteDirectories: bool = False
-    force: bool = False
+    deleteDirectories: Optional[bool] = None
+    force: Optional[bool] = None
 
 
 class WSUpdateMetadataRequest(BaseModel):

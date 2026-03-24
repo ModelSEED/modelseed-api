@@ -39,20 +39,36 @@ class WorkspaceService:
             "Content-Type": "application/json",
             "Authorization": self.token,
         }
-        response = requests.post(
-            self.url,
-            json=payload,
-            headers=headers,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        result = response.json()
+        try:
+            response = requests.post(
+                self.url, json=payload, headers=headers, timeout=self.timeout,
+            )
+        except requests.RequestException as e:
+            raise WorkspaceError(f"Cannot reach workspace service: {e}")
+
+        # Try to parse JSON body regardless of HTTP status — workspace often
+        # returns JSON-RPC error objects inside non-200 responses
+        try:
+            result = response.json()
+        except ValueError:
+            if not response.ok:
+                raise WorkspaceError(
+                    f"Workspace HTTP {response.status_code}: {response.text[:500]}",
+                    response.status_code,
+                )
+            return None
 
         if "error" in result:
             error = result["error"]
             raise WorkspaceError(
                 error.get("message", "Unknown workspace error"),
                 error.get("code", -1),
+            )
+
+        if not response.ok:
+            raise WorkspaceError(
+                f"Workspace HTTP {response.status_code}",
+                response.status_code,
             )
 
         return result.get("result", [None])[0]
