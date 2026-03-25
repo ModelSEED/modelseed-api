@@ -131,33 +131,75 @@ class ModelData(BaseModel):
     biomasses: list[ModelBiomass]
 
 
-class SimpleEditOutput(BaseModel):
-    """Summary of a model edit."""
-
-    id: str
-    timestamp: str
-    reactions_removed: list[str] = []
-    reactions_added: list[str] = []
-    reactions_modified: list[str] = []
-    biomass_added: list[str] = []
-    biomass_changed: list[str] = []
-    biomass_removed: list[str] = []
+# Edit schemas — reaction operations
 
 
-class DetailedEditOutput(BaseModel):
-    """Detailed model edit with full reaction/biomass data."""
+class ReactionToAdd(BaseModel):
+    """Add a reaction from the ModelSEED biochemistry database."""
 
-    id: str
-    timestamp: str
-    reactions_removed: list[dict[str, str]] = []
-    reactions_added: list[dict[str, str]] = []
-    reactions_modified: list[dict[str, str]] = []
-    biomass_added: list[dict[str, str]] = []
-    biomass_changed: list[dict[str, str]] = []
-    biomass_removed: list[dict[str, str]] = []
+    reaction_id: str  # biochem ID, e.g., "rxn00001"
+    compartment: str = "c0"
+    direction: Optional[str] = None  # ">", "<", "=" — None = use DB default
+    gpr: Optional[str] = None  # e.g., "gene1 or (gene2 and gene3)"
 
 
-# Request schemas
+class ReactionToModify(BaseModel):
+    """Modify an existing reaction in the model."""
+
+    reaction_id: str  # model reaction ID, e.g., "rxn00001_c0"
+    direction: Optional[str] = None
+    name: Optional[str] = None
+    gpr: Optional[str] = None  # empty string = clear GPR
+
+
+# Edit schemas — compound operations
+
+
+class CompoundToAdd(BaseModel):
+    """Add a compound from the ModelSEED biochemistry database."""
+
+    compound_id: str  # biochem ID, e.g., "cpd00001"
+    compartment: str = "c0"
+    name: Optional[str] = None  # override DB name
+    formula: Optional[str] = None
+    charge: Optional[float] = None
+
+
+class CompoundToModify(BaseModel):
+    """Modify an existing compound in the model."""
+
+    compound_id: str  # model compound ID, e.g., "cpd00001_c0"
+    name: Optional[str] = None
+    formula: Optional[str] = None
+    charge: Optional[float] = None
+
+
+# Edit schemas — biomass operations
+
+
+class BiomassCompoundChange(BaseModel):
+    """Modify a compound's coefficient in a biomass reaction."""
+
+    compound_id: str  # model compound ID, e.g., "cpd00001_c0"
+    coefficient: float  # 0 = remove from biomass
+
+
+class BiomassChange(BaseModel):
+    """Changes to a biomass reaction."""
+
+    biomass_id: str  # e.g., "bio1"
+    name: Optional[str] = None
+    compound_changes: list[BiomassCompoundChange] = []
+
+
+class BiomassToAdd(BaseModel):
+    """Add a new biomass reaction."""
+
+    name: str = "New Biomass"
+    compounds: list[BiomassCompoundChange] = []
+
+
+# Request/response schemas
 
 
 class CopyModelRequest(BaseModel):
@@ -175,13 +217,34 @@ class CopyModelRequest(BaseModel):
 
 
 class EditModelRequest(BaseModel):
-    """Request to edit a model."""
+    """Request to edit a model. All operations applied atomically."""
+
+    model: str  # workspace ref (required)
+    reactions_to_add: list[ReactionToAdd] = []
+    reactions_to_remove: list[str] = []  # model reaction IDs
+    reactions_to_modify: list[ReactionToModify] = []
+    compounds_to_add: list[CompoundToAdd] = []
+    compounds_to_remove: list[str] = []  # model compound IDs
+    compounds_to_modify: list[CompoundToModify] = []
+    biomass_changes: list[BiomassChange] = []
+    biomasses_to_add: list[BiomassToAdd] = []
+    biomasses_to_remove: list[str] = []
+
+
+class EditModelResponse(BaseModel):
+    """Summary of all edits applied."""
 
     model: str
-    biomass_changes: list[Any] = []
-    reactions_to_remove: list[str] = []
-    reactions_to_add: list[Any] = []
-    reactions_to_modify: list[Any] = []
+    reactions_added: list[str] = []
+    reactions_removed: list[str] = []
+    reactions_modified: list[str] = []
+    compounds_added: list[str] = []
+    compounds_removed: list[str] = []
+    compounds_modified: list[str] = []
+    biomasses_added: list[str] = []
+    biomasses_modified: list[str] = []
+    biomasses_removed: list[str] = []
+    warnings: list[str] = []
 
 
 class ManageGapfillsRequest(BaseModel):

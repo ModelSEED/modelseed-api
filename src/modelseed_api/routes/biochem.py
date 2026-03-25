@@ -4,11 +4,7 @@ Replaces the ms_fba support service for biochemistry queries.
 Data comes from ModelSEEDDatabase (local files) via ModelSEEDpy.
 """
 
-from typing import Any, Optional
-
-from fastapi import APIRouter, Depends, HTTPException, Query
-
-from modelseed_api.auth.dependencies import AuthUser, get_current_user, get_optional_user
+from fastapi import APIRouter, HTTPException, Query
 from modelseed_api.services import biochem_service
 
 router = APIRouter()
@@ -57,17 +53,3 @@ async def search_biochem(
         raise HTTPException(status_code=400, detail="type must be 'compounds' or 'reactions'")
 
 
-@router.post("/adjust-reaction")
-async def adjust_model_reaction(
-    workspace: str = Query(...),
-    model: str = Query(...),
-    reaction: list[str] = Query(...),
-    direction: Optional[list[str]] = Query(None),
-    addReaction: bool = Query(False),
-    removeReaction: bool = Query(False),
-    user: AuthUser = Depends(get_current_user),
-) -> Any:
-    """Adjust reactions in a model (change direction, add, or remove)."""
-    raise HTTPException(
-        status_code=501, detail="Reaction adjustment not yet implemented"
-    )

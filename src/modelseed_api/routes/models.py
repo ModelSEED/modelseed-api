@@ -9,6 +9,7 @@ from modelseed_api.auth.dependencies import AuthUser, get_current_user
 from modelseed_api.schemas.models import (
     CopyModelRequest,
     EditModelRequest,
+    EditModelResponse,
     ManageGapfillsRequest,
 )
 from modelseed_api.services.export_service import export_cobra_json, export_sbml
@@ -177,16 +178,23 @@ async def list_model_edits(
     ref: str = Query(..., description="Workspace reference to the model"),
     user: AuthUser = Depends(get_current_user),
 ) -> list[dict]:
-    """List edit history for a model."""
-    # TODO: Implement in Phase 2
-    raise HTTPException(status_code=501, detail="Model edits listing not yet implemented")
+    """List edit history for a model. Currently returns empty (history not tracked)."""
+    return []
 
 
-@router.post("/edit")
+@router.post("/edit", response_model=EditModelResponse)
 async def edit_model(
     request: EditModelRequest,
     user: AuthUser = Depends(get_current_user),
-) -> Any:
-    """Edit a model (add/remove/modify reactions, change biomass)."""
-    # TODO: Implement in Phase 2
-    raise HTTPException(status_code=501, detail="Model editing not yet implemented")
+) -> EditModelResponse:
+    """Edit a model (add/remove/modify reactions, compounds, biomass).
+
+    All edits are applied atomically -- either all succeed or none.
+    """
+    svc = _get_svc(user)
+    try:
+        return svc.edit_model(request.model, request)
+    except WorkspaceError as e:
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

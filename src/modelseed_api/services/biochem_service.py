@@ -106,11 +106,23 @@ def get_compound(compound_id: str) -> Optional[dict]:
     return _clean_compound(cpd) if cpd else None
 
 
+def get_compound_raw(compound_id: str) -> Optional[dict]:
+    """Get full compound dict including charge, formula, mass (for model editing)."""
+    db = _get_db()
+    return db["compounds"].get(compound_id)
+
+
 def get_reaction(reaction_id: str) -> Optional[dict]:
     """Get a reaction by ModelSEED ID."""
     db = _get_db()
     rxn = db["reactions"].get(reaction_id)
     return _clean_reaction(rxn) if rxn else None
+
+
+def get_reaction_raw(reaction_id: str) -> Optional[dict]:
+    """Get full reaction dict including stoichiometry array (for model editing)."""
+    db = _get_db()
+    return db["reactions"].get(reaction_id)
 
 
 def get_compounds(ids: list[str]) -> list[dict]:

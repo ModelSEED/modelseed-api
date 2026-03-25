@@ -162,42 +162,47 @@ class ModelService:
 
         Replicates ProbModelSEED.get_model.
         Retrieves the model object from {model_ref}/model in the workspace.
-        Also repairs folder metadata if missing (one-time fix for models
-        saved without stats).
+        Also merges folder metadata (organism, taxonomy, etc.) and repairs
+        missing stats (one-time fix for models saved without stats).
         """
         model_obj = self.get_model_raw(model_ref)
         formatted = self._format_model_data(model_ref, model_obj)
 
-        # Auto-repair: update folder metadata if it's missing stats
+        # Fetch folder metadata once for both merging and repair
         try:
-            self._ensure_folder_metadata(model_ref, formatted)
+            user_meta = self._get_folder_metadata(model_ref)
+            if user_meta is not None:
+                # Merge organism/taxonomy info into response
+                formatted["id"] = user_meta.get("id")
+                formatted["name"] = user_meta.get("name")
+                formatted["organism_name"] = user_meta.get("organism_name")
+                formatted["taxonomy"] = user_meta.get("taxonomy")
+                formatted["domain"] = user_meta.get("domain")
+                formatted["type"] = user_meta.get("type")
+
+                # Auto-repair: update folder metadata if it's missing stats
+                if not user_meta.get("num_reactions"):
+                    self._repair_folder_metadata(model_ref, formatted)
         except Exception:
             pass  # non-critical, don't block model view
 
         return formatted
 
-    def _ensure_folder_metadata(self, model_ref: str, formatted: dict):
-        """Update the modelfolder metadata with model stats if missing."""
-        # Check current folder metadata
-        folder_result = self.ws.ls({"paths": [model_ref]})
-        if not folder_result:
-            return
-
-        # Get parent folder metadata via ls on parent
+    def _get_folder_metadata(self, model_ref: str) -> dict | None:
+        """Fetch user metadata dict for a model folder."""
         parent = model_ref.rsplit("/", 1)[0] + "/"
+        folder_name = model_ref.rstrip("/").split("/")[-1]
         parent_result = self.ws.ls({"paths": [parent]})
         if not parent_result or parent not in parent_result:
-            return
-
-        folder_name = model_ref.rstrip("/").split("/")[-1]
+            return None
         for entry in parent_result[parent]:
             if entry[0] == folder_name:
-                user_meta = entry[7] if isinstance(entry[7], dict) else {}
-                if user_meta.get("num_reactions"):
-                    return  # metadata already present
-                break
+                return entry[7] if isinstance(entry[7], dict) else {}
+        return None
 
-        # Metadata missing — update it
+    def _repair_folder_metadata(self, model_ref: str, formatted: dict):
+        """Update the modelfolder metadata with model stats if missing."""
+        folder_name = model_ref.rstrip("/").split("/")[-1]
         meta = {
             "num_reactions": str(len(formatted.get("reactions", []))),
             "num_compounds": str(len(formatted.get("compounds", []))),
@@ -591,6 +596,438 @@ class ModelService:
             "objects": [[model_path, "model", {}, json.dumps(model_obj)]],
             "overwrite": True,
         })
+
+    # ------------------------------------------------------------------
+    # Model editing
+    # ------------------------------------------------------------------
+
+    # Standard compartment labels
+    _COMPARTMENT_NAMES = {
+        "c": "Cytoplasm",
+        "e": "Extracellular",
+        "p": "Periplasm",
+        "m": "Mitochondria",
+        "x": "Peroxisome",
+        "n": "Nucleus",
+        "v": "Vacuole",
+        "g": "Golgi",
+        "r": "Endoplasmic reticulum",
+        "d": "Plastid",
+    }
+
+    def edit_model(self, model_ref: str, edits) -> dict:
+        """Apply all edits atomically to a model.
+
+        1. Load model from workspace
+        2. Validate all edits (references exist, no conflicts)
+        3. Apply all mutations to the model dict
+        4. Save model back to workspace
+        5. Update folder metadata
+        6. Return summary
+        """
+        from modelseed_api.schemas.models import EditModelResponse
+        from modelseed_api.services import biochem_service
+
+        model_obj = self.get_model_raw(model_ref)
+        response = EditModelResponse(model=model_ref)
+
+        # Build indexes for validation
+        existing_rxns = {r["id"] for r in model_obj.get("modelreactions", [])}
+        existing_cpds = {c["id"] for c in model_obj.get("modelcompounds", [])}
+        existing_bios = {b["id"] for b in model_obj.get("biomasses", [])}
+
+        errors = []
+
+        # Validate reaction removals
+        for rxn_id in edits.reactions_to_remove:
+            if rxn_id not in existing_rxns:
+                errors.append(f"Reaction '{rxn_id}' not found in model")
+
+        # Validate reaction additions
+        for rxn in edits.reactions_to_add:
+            full_id = f"{rxn.reaction_id}_{rxn.compartment}"
+            if full_id in existing_rxns:
+                errors.append(f"Reaction '{full_id}' already exists in model")
+            db_rxn = biochem_service.get_reaction_raw(rxn.reaction_id)
+            if not db_rxn:
+                errors.append(f"Reaction '{rxn.reaction_id}' not found in biochemistry database")
+            if rxn.direction and rxn.direction not in (">", "<", "="):
+                errors.append(f"Invalid direction '{rxn.direction}' for reaction '{rxn.reaction_id}'")
+
+        # Validate reaction modifications
+        for mod in edits.reactions_to_modify:
+            if mod.reaction_id not in existing_rxns:
+                errors.append(f"Reaction '{mod.reaction_id}' not found in model")
+            if mod.direction and mod.direction not in (">", "<", "="):
+                errors.append(f"Invalid direction '{mod.direction}'")
+
+        # Validate compound removals
+        for cpd_id in edits.compounds_to_remove:
+            if cpd_id not in existing_cpds:
+                errors.append(f"Compound '{cpd_id}' not found in model")
+
+        # Validate compound additions
+        for cpd in edits.compounds_to_add:
+            full_id = f"{cpd.compound_id}_{cpd.compartment}"
+            if full_id in existing_cpds:
+                errors.append(f"Compound '{full_id}' already exists in model")
+
+        # Validate compound modifications
+        for mod in edits.compounds_to_modify:
+            if mod.compound_id not in existing_cpds:
+                errors.append(f"Compound '{mod.compound_id}' not found in model")
+
+        # Validate biomass modifications
+        for change in edits.biomass_changes:
+            if change.biomass_id not in existing_bios:
+                errors.append(f"Biomass '{change.biomass_id}' not found in model")
+
+        # Validate biomass removals
+        for bio_id in edits.biomasses_to_remove:
+            if bio_id not in existing_bios:
+                errors.append(f"Biomass '{bio_id}' not found in model")
+
+        if errors:
+            raise ValueError("; ".join(errors))
+
+        # --- Mutation phase (all validated) ---
+        self._edit_add_reactions(model_obj, edits.reactions_to_add, response)
+        self._edit_remove_reactions(model_obj, edits.reactions_to_remove, response)
+        self._edit_modify_reactions(model_obj, edits.reactions_to_modify, response)
+        self._edit_add_compounds(model_obj, edits.compounds_to_add, response)
+        self._edit_remove_compounds(model_obj, edits.compounds_to_remove, response)
+        self._edit_modify_compounds(model_obj, edits.compounds_to_modify, response)
+        self._edit_add_biomasses(model_obj, edits.biomasses_to_add, response)
+        self._edit_modify_biomasses(model_obj, edits.biomass_changes, response)
+        self._edit_remove_biomasses(model_obj, edits.biomasses_to_remove, response)
+
+        # --- Persist ---
+        self._save_model(model_ref, model_obj)
+        self._update_model_metadata(model_ref, model_obj)
+
+        return response
+
+    def _edit_add_reactions(self, model_obj, reactions, response):
+        """Add reactions from the biochemistry database to the model."""
+        from modelseed_api.services import biochem_service
+
+        for rxn in reactions:
+            db_rxn = biochem_service.get_reaction_raw(rxn.reaction_id)
+            if not db_rxn:
+                continue
+
+            # Ensure compartments exist
+            self._ensure_compartment_exists(model_obj, rxn.compartment)
+            # Extracellular compartment for transport reactions
+            comp_idx = int(rxn.compartment[1:]) if len(rxn.compartment) > 1 else 0
+            ext_compartment = f"e{comp_idx}"
+
+            # Build reagents from stoichiometry, auto-adding missing compounds
+            reagents = []
+            for s in db_rxn.get("stoichiometry", []):
+                cpd_id = s["compound"]
+                if s.get("compartment", 0) == 0:
+                    cpd_compartment = rxn.compartment
+                else:
+                    cpd_compartment = ext_compartment
+                    self._ensure_compartment_exists(model_obj, ext_compartment)
+
+                full_cpd_id = self._ensure_compound_exists(
+                    model_obj, cpd_id, cpd_compartment
+                )
+                reagents.append({
+                    "modelcompound_ref": f"~/modelcompounds/id/{full_cpd_id}",
+                    "coefficient": s["coefficient"],
+                })
+
+            full_rxn_id = f"{rxn.reaction_id}_{rxn.compartment}"
+            direction = rxn.direction or db_rxn.get("reversibility", "=")
+
+            model_rxn = {
+                "id": full_rxn_id,
+                "name": db_rxn.get("name", ""),
+                "reaction_ref": f"~/reactions/id/{rxn.reaction_id}",
+                "direction": direction,
+                "modelcompartment_ref": f"~/modelcompartments/id/{rxn.compartment}",
+                "modelReactionReagents": reagents,
+                "modelReactionProteins": self._parse_gpr_to_proteins(rxn.gpr),
+                "gapfill_data": {},
+                "probability": 0,
+                "protons": 0,
+                "maxforflux": 1000000,
+                "maxrevflux": 1000000,
+                "imported_gpr": rxn.gpr or "",
+                "aliases": [],
+                "dblinks": {},
+                "string_attributes": {},
+                "numerical_attributes": {},
+                "pathway": "",
+                "reference": "",
+            }
+            model_obj.setdefault("modelreactions", []).append(model_rxn)
+            response.reactions_added.append(full_rxn_id)
+
+    def _edit_remove_reactions(self, model_obj, reaction_ids, response):
+        """Remove reactions by model ID."""
+        ids_to_remove = set(reaction_ids)
+        original = model_obj.get("modelreactions", [])
+        model_obj["modelreactions"] = [
+            r for r in original if r["id"] not in ids_to_remove
+        ]
+        for rxn_id in reaction_ids:
+            response.reactions_removed.append(rxn_id)
+
+    def _edit_modify_reactions(self, model_obj, modifications, response):
+        """Modify existing reactions: direction, name, GPR."""
+        rxn_index = {r["id"]: r for r in model_obj.get("modelreactions", [])}
+        for mod in modifications:
+            rxn = rxn_index.get(mod.reaction_id)
+            if not rxn:
+                continue
+            if mod.direction is not None:
+                rxn["direction"] = mod.direction
+            if mod.name is not None:
+                rxn["name"] = mod.name
+            if mod.gpr is not None:
+                rxn["modelReactionProteins"] = self._parse_gpr_to_proteins(
+                    mod.gpr if mod.gpr else None
+                )
+                rxn["imported_gpr"] = mod.gpr
+            response.reactions_modified.append(mod.reaction_id)
+
+    def _edit_add_compounds(self, model_obj, compounds, response):
+        """Add compounds to the model from biochem DB or custom."""
+        from modelseed_api.services import biochem_service
+
+        for cpd in compounds:
+            db_cpd = biochem_service.get_compound_raw(cpd.compound_id)
+            self._ensure_compartment_exists(model_obj, cpd.compartment)
+
+            full_id = f"{cpd.compound_id}_{cpd.compartment}"
+            new_cpd = {
+                "id": full_id,
+                "name": cpd.name or (db_cpd.get("name", "") if db_cpd else cpd.compound_id),
+                "formula": cpd.formula or (db_cpd.get("formula", "") if db_cpd else ""),
+                "charge": cpd.charge if cpd.charge is not None else (
+                    db_cpd.get("charge", 0) if db_cpd else 0
+                ),
+                "modelcompartment_ref": f"~/modelcompartments/id/{cpd.compartment}",
+                "compound_ref": f"~/compounds/id/{cpd.compound_id}",
+                "maxuptake": 0,
+                "aliases": [],
+                "dblinks": {},
+                "string_attributes": {},
+                "numerical_attributes": {},
+            }
+            model_obj.setdefault("modelcompounds", []).append(new_cpd)
+            response.compounds_added.append(full_id)
+
+    def _edit_remove_compounds(self, model_obj, compound_ids, response):
+        """Remove compounds by model ID. Warns if compound is used by a reaction."""
+        ids_to_remove = set(compound_ids)
+
+        # Check for compounds used by reactions
+        used_by_rxn = set()
+        for rxn in model_obj.get("modelreactions", []):
+            for reagent in rxn.get("modelReactionReagents", []):
+                ref = reagent.get("modelcompound_ref", "")
+                cpd_id = ref.split("/")[-1]
+                if cpd_id in ids_to_remove:
+                    used_by_rxn.add(cpd_id)
+
+        if used_by_rxn:
+            raise ValueError(
+                f"Cannot remove compounds still used by reactions: {', '.join(used_by_rxn)}"
+            )
+
+        original = model_obj.get("modelcompounds", [])
+        model_obj["modelcompounds"] = [
+            c for c in original if c["id"] not in ids_to_remove
+        ]
+        for cpd_id in compound_ids:
+            response.compounds_removed.append(cpd_id)
+
+    def _edit_modify_compounds(self, model_obj, modifications, response):
+        """Modify existing compounds: name, formula, charge."""
+        cpd_index = {c["id"]: c for c in model_obj.get("modelcompounds", [])}
+        for mod in modifications:
+            cpd = cpd_index.get(mod.compound_id)
+            if not cpd:
+                continue
+            if mod.name is not None:
+                cpd["name"] = mod.name
+            if mod.formula is not None:
+                cpd["formula"] = mod.formula
+            if mod.charge is not None:
+                cpd["charge"] = mod.charge
+            response.compounds_modified.append(mod.compound_id)
+
+    def _edit_add_biomasses(self, model_obj, biomasses, response):
+        """Add new biomass reactions."""
+        existing_ids = {b["id"] for b in model_obj.get("biomasses", [])}
+        for i, bio in enumerate(biomasses):
+            # Auto-generate ID
+            n = len(existing_ids) + 1
+            bio_id = f"bio{n}"
+            while bio_id in existing_ids:
+                n += 1
+                bio_id = f"bio{n}"
+            existing_ids.add(bio_id)
+
+            bio_cpds = []
+            for cc in bio.compounds:
+                bio_cpds.append({
+                    "modelcompound_ref": f"~/modelcompounds/id/{cc.compound_id}",
+                    "coefficient": cc.coefficient,
+                })
+
+            new_bio = {
+                "id": bio_id,
+                "name": bio.name,
+                "biomasscompounds": bio_cpds,
+                "dna": 0,
+                "rna": 0,
+                "protein": 0,
+                "cellwall": 0,
+                "lipid": 0,
+                "cofactor": 0,
+                "other": 1,
+                "energy": 0,
+            }
+            model_obj.setdefault("biomasses", []).append(new_bio)
+            response.biomasses_added.append(bio_id)
+
+    def _edit_modify_biomasses(self, model_obj, changes, response):
+        """Modify biomass compound coefficients. Coefficient=0 removes the compound."""
+        bio_index = {b["id"]: b for b in model_obj.get("biomasses", [])}
+        for change in changes:
+            bio = bio_index.get(change.biomass_id)
+            if not bio:
+                continue
+
+            if change.name is not None:
+                bio["name"] = change.name
+
+            for cc in change.compound_changes:
+                cpd_ref = f"~/modelcompounds/id/{cc.compound_id}"
+                found = False
+                for bc in bio.get("biomasscompounds", []):
+                    if bc.get("modelcompound_ref", "").endswith(f"/{cc.compound_id}"):
+                        if cc.coefficient == 0:
+                            bio["biomasscompounds"].remove(bc)
+                        else:
+                            bc["coefficient"] = cc.coefficient
+                        found = True
+                        break
+                if not found and cc.coefficient != 0:
+                    bio.setdefault("biomasscompounds", []).append({
+                        "modelcompound_ref": cpd_ref,
+                        "coefficient": cc.coefficient,
+                    })
+
+            response.biomasses_modified.append(change.biomass_id)
+
+    def _edit_remove_biomasses(self, model_obj, biomass_ids, response):
+        """Remove biomass reactions by ID."""
+        ids_to_remove = set(biomass_ids)
+        original = model_obj.get("biomasses", [])
+        model_obj["biomasses"] = [
+            b for b in original if b["id"] not in ids_to_remove
+        ]
+        for bio_id in biomass_ids:
+            response.biomasses_removed.append(bio_id)
+
+    def _ensure_compound_exists(self, model_obj, compound_id, compartment):
+        """Ensure a compound exists in modelcompounds, adding from biochem DB if needed."""
+        from modelseed_api.services import biochem_service
+
+        full_id = f"{compound_id}_{compartment}"
+        existing = {c["id"] for c in model_obj.get("modelcompounds", [])}
+        if full_id in existing:
+            return full_id
+
+        db_cpd = biochem_service.get_compound_raw(compound_id)
+        new_cpd = {
+            "id": full_id,
+            "name": db_cpd.get("name", compound_id) if db_cpd else compound_id,
+            "formula": db_cpd.get("formula", "") if db_cpd else "",
+            "charge": db_cpd.get("charge", 0) if db_cpd else 0,
+            "modelcompartment_ref": f"~/modelcompartments/id/{compartment}",
+            "compound_ref": f"~/compounds/id/{compound_id}",
+            "maxuptake": 0,
+            "aliases": [],
+            "dblinks": {},
+            "string_attributes": {},
+            "numerical_attributes": {},
+        }
+        model_obj.setdefault("modelcompounds", []).append(new_cpd)
+        return full_id
+
+    def _ensure_compartment_exists(self, model_obj, compartment_id):
+        """Ensure a compartment exists in modelcompartments, adding if needed."""
+        existing = {c["id"] for c in model_obj.get("modelcompartments", [])}
+        if compartment_id in existing:
+            return
+
+        label = compartment_id[0] if compartment_id else "c"
+        comp_index = int(compartment_id[1:]) if len(compartment_id) > 1 else 0
+        name = self._COMPARTMENT_NAMES.get(label, "Unknown")
+
+        new_comp = {
+            "id": compartment_id,
+            "label": label,
+            "name": name,
+            "pH": 7.0,
+            "potential": 0.0,
+            "compartmentIndex": comp_index,
+            "compartment_ref": f"~/compartments/id/{label}",
+        }
+        model_obj.setdefault("modelcompartments", []).append(new_comp)
+
+    def _parse_gpr_to_proteins(self, gpr):
+        """Convert GPR string to workspace nested protein/subunit/feature structure.
+
+        OR groups -> separate modelReactionProtein entries
+        AND groups -> subunits within the same protein entry
+        """
+        if not gpr or not gpr.strip():
+            return []
+
+        # Split on " or " for protein alternatives
+        or_groups = [g.strip().strip("()") for g in gpr.split(" or ")]
+
+        proteins = []
+        for group in or_groups:
+            and_genes = [g.strip().strip("()") for g in group.split(" and ")]
+            subunits = []
+            for gene in and_genes:
+                if gene:
+                    subunits.append({
+                        "role": "",
+                        "triggering": 1,
+                        "optionalSubunit": 0,
+                        "note": "",
+                        "feature_refs": [f"~/genome/features/id/{gene}"],
+                    })
+            if subunits:
+                proteins.append({
+                    "note": "",
+                    "modelReactionProteinSubunits": subunits,
+                })
+
+        return proteins
+
+    def _update_model_metadata(self, model_ref, model_obj):
+        """Update folder metadata counts after editing."""
+        meta = {
+            "num_reactions": str(len(model_obj.get("modelreactions", []))),
+            "num_compounds": str(len(model_obj.get("modelcompounds", []))),
+            "num_biomasses": str(len(model_obj.get("biomasses", []))),
+        }
+        try:
+            self.ws.update_metadata({"objects": [[model_ref, meta]]})
+        except Exception:
+            pass  # non-critical
 
     def _format_gapfill_entry(self, gf_entry: dict, model_ref: str) -> dict:
         """Format a gapfill entry for API response."""
