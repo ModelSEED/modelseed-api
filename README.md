@@ -245,27 +245,13 @@ Core dependencies (see `pyproject.toml`):
 
 KBUtilLib was designed for KBase notebook apps. Running it standalone requires these workarounds, applied in the job scripts. These should ideally be fixed upstream in KBUtilLib.
 
-### 1. BVBRCUtils.save() no-op — [PR #25](https://github.com/cshenry/KBUtilLib/pull/25) pending
+### ~~1. BVBRCUtils.save() no-op~~ — Fixed ([PR #25](https://github.com/cshenry/KBUtilLib/pull/25) merged)
 
-`build_kbase_genome_from_api()` calls `self.save("test_genome", genome)` which requires KBase SDK NotebookUtils. Patched as a no-op:
+~~`build_kbase_genome_from_api()` calls `self.save("test_genome", genome)` which requires KBase SDK NotebookUtils.~~
 
-```python
-BVBRCUtils.save = lambda self, name, obj: None
-```
+### ~~2. Template .info attribute~~ — Fixed ([PR #26](https://github.com/cshenry/KBUtilLib/pull/26) merged)
 
-### 2. Template .info attribute — [PR #26](https://github.com/cshenry/KBUtilLib/pull/26) pending
-
-`MSTemplateBuilder.from_dict().build()` does not set the `.info` attribute on the template object, but `build_metabolic_model()` references it. Patched with a mock class:
-
-```python
-class _Info:
-    def __init__(self, name):
-        self.name = name
-    def __str__(self):
-        return self.name
-
-template.info = _Info("GramNegModelTemplateV7")
-```
+~~`MSTemplateBuilder.from_dict().build()` doesn't set `.info`, but `build_metabolic_model()` references it.~~ The `.info` references were moved to `kb_build_metabolic_models()` with `hasattr` guards.
 
 ### 3. Genome classifier bypass
 
@@ -306,13 +292,13 @@ ws.create({"objects": [[path, "modelfolder", folder_meta, ""]], "overwrite": 1})
 ws.update_metadata({"objects": [[path, folder_meta]]})
 ```
 
-### Pending upstream PRs
+### Merged upstream PRs
 
-Three KBUtilLib PRs are open (all approved by Chris Henry, awaiting merge):
+Three KBUtilLib PRs have been merged (2026-03-25):
 
-- **[PR #24](https://github.com/cshenry/KBUtilLib/pull/24)** — `PatricWSUtils.get_media()` for TSV+JSON media parsing. Once merged, removes `job_scripts/utils.py` workaround.
-- **[PR #25](https://github.com/cshenry/KBUtilLib/pull/25)** — Remove debug `self.save()` from `BVBRCUtils`. Once merged, removes monkey-patch (workaround 1).
-- **[PR #26](https://github.com/cshenry/KBUtilLib/pull/26)** — Move template `.info` refs from `build_metabolic_model()` to `kb_build_metabolic_models()`. Once merged, removes mock `_Info` class (workaround 2).
+- **[PR #24](https://github.com/cshenry/KBUtilLib/pull/24)** — `PatricWSUtils.get_media()` for TSV+JSON media parsing. Replaced `job_scripts/utils.py`.
+- **[PR #25](https://github.com/cshenry/KBUtilLib/pull/25)** — Removed debug `self.save()` from `BVBRCUtils`. Eliminated workaround 1.
+- **[PR #26](https://github.com/cshenry/KBUtilLib/pull/26)** — Moved template `.info` refs to `kb_build_metabolic_models()` with `hasattr` guards. Eliminated workaround 2.
 
 Chris has also agreed to add a `template_source="git"` configuration parameter to KBUtilLib, which would eliminate workaround 4.
 
@@ -326,8 +312,6 @@ import os
 os.environ['KB_AUTH_TOKEN'] = 'unused'
 
 from kbutillib import BVBRCUtils, MSReconstructionUtils
-
-BVBRCUtils.save = lambda self, name, obj: None
 
 kwargs = dict(
     config_file=False,
@@ -353,9 +337,6 @@ from modelseedpy import MSTemplateBuilder
 
 with open('ModelSEEDTemplates/templates/v7.0/GramNegModelTemplateV7.json') as f:
     template = MSTemplateBuilder.from_dict(json.load(f)).build()
-
-# Add mock .info (see workaround #2 above)
-template.info = _Info("GramNegModelTemplateV7")
 ```
 
 Available templates (v7.0):
@@ -430,7 +411,6 @@ src/
     gapfill.py                # Model gapfilling via MSGapfill
     run_fba.py                # Flux balance analysis
     merge_models.py           # Model merging
-    utils.py                  # Shared utilities (media parsing, etc.)
 tests/
   test_live_integration.py    # Integration tests against live workspace
 ```
@@ -492,11 +472,11 @@ The build context is the **parent directory** containing all sibling repos (not 
 
 | Repo | Issue | Status | Workaround |
 |------|-------|--------|------------|
-| KBUtilLib | `BVBRCUtils.save()` debug call requires NotebookUtils | [PR #25](https://github.com/cshenry/KBUtilLib/pull/25) — awaiting merge | No-op monkey-patch (workaround 1) |
-| KBUtilLib | `build_metabolic_model()` references `.info` on non-WS templates | [PR #26](https://github.com/cshenry/KBUtilLib/pull/26) — awaiting merge | Mock `_Info` class (workaround 2) |
+| ~~KBUtilLib~~ | ~~`BVBRCUtils.save()` debug call~~ | ~~Merged (PR #25)~~ | ~~Removed~~ |
+| ~~KBUtilLib~~ | ~~`.info` on non-WS templates~~ | ~~Merged (PR #26)~~ | ~~Removed~~ |
+| ~~KBUtilLib~~ | ~~PATRIC media TSV parsing~~ | ~~Merged (PR #24)~~ | ~~Removed (`utils.py` deleted)~~ |
 | KBUtilLib | `MSGenomeClassifier` needs pickle files not in repo | Open | Pass `classifier=None` + explicit template type (workaround 3) |
 | KBUtilLib | No `template_source="git"` config | Open — Chris agreed to add | Dummy `KB_AUTH_TOKEN` env var (workaround 4) |
-| KBUtilLib | PATRIC media TSV parsing not supported | [PR #24](https://github.com/cshenry/KBUtilLib/pull/24) — approved, awaiting merge | Custom TSV parser in `job_scripts/utils.py` |
 | ModelSEEDpy | `run_gapfilling()` doesn't auto-integrate | Open | Explicit `integrate_gapfill_solution()` + `create_kb_gapfilling_data()` (workaround 5) |
 | PATRIC WS | `ws.create()` doesn't persist metadata | Open | Explicit `ws.update_metadata()` after create (workaround 6) |
 

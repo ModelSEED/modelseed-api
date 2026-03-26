@@ -66,11 +66,6 @@ def main():
 
         from kbutillib import BVBRCUtils, MSReconstructionUtils
 
-        # WORKAROUND 2/4: BVBRCUtils.build_kbase_genome_from_api() calls
-        # self.save("test_genome", genome) which needs KBase SDK NotebookUtils.
-        # Fix: Chris to remove or guard this debug line in KBUtilLib.
-        BVBRCUtils.save = lambda self, name, obj: None
-
         init_kwargs = dict(
             config_file=False,
             token_file=None,
@@ -113,17 +108,6 @@ def main():
         with open(f"{templates_dir}/{gs_filename}") as f:
             gs_template = MSTemplateBuilder.from_dict(json.load(f)).build()
 
-        # WORKAROUND 3/4: MSTemplateBuilder.from_dict().build() doesn't set .info,
-        # but build_metabolic_model() references core_template.info at line 293.
-        # Fix: Chris to set .info in MSTemplateBuilder or KBUtilLib template loading.
-        class _Info:
-            def __init__(self, n):
-                self.name = n
-            def __str__(self):
-                return self.name
-        core_template.info = _Info("Core-V6")
-        gs_template.info = _Info(gs_filename.replace(".json", ""))
-
         # Step 4: Build model
         update_job(job_file, {"progress": "Building model..."})
         output, mdlutl = recon.build_metabolic_model(
@@ -158,12 +142,9 @@ def main():
             # Load media from workspace and convert to MSMedia object
             ms_media = None
             if media_ref:
-                from job_scripts.utils import fetch_workspace_object, workspace_media_to_msmedia
-                from modelseed_api.services.workspace_service import WorkspaceService
-                ws = WorkspaceService(args.token)
-                media_obj = fetch_workspace_object(ws, media_ref, args.token)
-                if media_obj:
-                    ms_media = workspace_media_to_msmedia(media_obj)
+                from kbutillib import PatricWSUtils
+                ws_utils = PatricWSUtils(**init_kwargs)
+                ms_media = ws_utils.get_media(media_ref, as_msmedia=True)
 
             update_job(job_file, {"progress": "Running gapfilling..."})
             from modelseedpy import MSGapfill

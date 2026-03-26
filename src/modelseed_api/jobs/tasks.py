@@ -54,15 +54,6 @@ def _load_template(template_type: str):
         template_data = json.load(f)
 
     template = MSTemplateBuilder.from_dict(template_data).build()
-
-    # WORKAROUND: templates from local files lack .info attribute
-    class _Info:
-        def __init__(self, n):
-            self.name = n
-        def __str__(self):
-            return self.name
-    template.info = _Info(filename.replace(".json", ""))
-
     return template
 
 
@@ -103,13 +94,12 @@ def _fetch_model_obj(ws, model_ref: str, token: str) -> dict:
     return {}
 
 
-def _load_media(ws, media_ref: str, token: str):
+def _load_media(media_ref: str, token: str):
     """Load media from workspace and convert to MSMedia object."""
-    from job_scripts.utils import fetch_workspace_object, workspace_media_to_msmedia
-    media_obj = fetch_workspace_object(ws, media_ref, token)
-    if media_obj:
-        return workspace_media_to_msmedia(media_obj)
-    return None
+    from kbutillib import PatricWSUtils
+    kwargs = _init_kwargs(token)
+    ws_utils = PatricWSUtils(**kwargs)
+    return ws_utils.get_media(media_ref, as_msmedia=True)
 
 
 @app.task(bind=True, name="modelseed.reconstruct")
@@ -128,8 +118,6 @@ def reconstruct(
     Mirrors src/job_scripts/reconstruct.py for full parity.
     """
     from kbutillib import BVBRCUtils, MSReconstructionUtils
-    # WORKAROUND: BVBRCUtils.save() needs KBase SDK NotebookUtils
-    BVBRCUtils.save = lambda self, name, obj: None
 
     kwargs = _init_kwargs(token)
 
@@ -180,9 +168,7 @@ def reconstruct(
         # Load media from workspace if specified
         ms_media = None
         if media_ref:
-            from modelseed_api.services.workspace_service import WorkspaceService
-            ws = WorkspaceService(token)
-            ms_media = _load_media(ws, media_ref, token)
+            ms_media = _load_media(media_ref, token)
 
         gapfiller = MSGapfill(
             mdlutl.model,
@@ -304,7 +290,7 @@ def gapfill(
     ms_media = None
     if media_ref:
         self.update_state(state="PROGRESS", meta={"status": "Loading media..."})
-        ms_media = _load_media(ws, media_ref, token)
+        ms_media = _load_media(media_ref, token)
 
     # Run gapfilling
     self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})

@@ -111,10 +111,16 @@ def main():
         ms_media = None
         if media_ref:
             update_job(job_file, {"progress": "Loading media..."})
-            from job_scripts.utils import fetch_workspace_object, workspace_media_to_msmedia
-            media_obj = fetch_workspace_object(ws, media_ref, args.token)
-            if media_obj:
-                ms_media = workspace_media_to_msmedia(media_obj)
+            from kbutillib import PatricWSUtils
+            ws_utils = PatricWSUtils(
+                config_file=False,
+                token_file=None,
+                kbase_token_file=None,
+                token={"patric": args.token, "kbase": "unused"},
+                modelseed_path=settings.modelseed_db_path,
+                cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
+            )
+            ms_media = ws_utils.get_media(media_ref, as_msmedia=True)
 
         # Step 5: Run gapfilling
         update_job(job_file, {"progress": "Running gapfilling..."})
