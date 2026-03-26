@@ -102,48 +102,71 @@ cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml
 
 ## API Endpoints
 
-All endpoints require a PATRIC token in the `Authorization` header.
+Most endpoints require a PATRIC token in the `Authorization` header. Biochemistry endpoints are public.
 
-### Models (`/api/models`)
+### Health (`/api`)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/models` | List user's models |
-| `GET` | `/api/models/data?ref=` | Full model detail (reactions, compounds, genes) |
-| `GET` | `/api/models/export?ref=&format=` | Export as json, sbml, or cobra-json |
-| `GET` | `/api/models/gapfills?ref=` | List gapfill solutions |
-| `POST` | `/api/models/gapfills/manage` | Integrate, unintegrate, or delete gapfills |
-| `GET` | `/api/models/fba?ref=` | List FBA studies |
-| `DELETE` | `/api/models?ref=` | Delete a model |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/health` | No | Health check — returns `{"status":"ok","version":"0.1.0"}` |
 
-### Jobs (`/api/jobs`)
+### Models (`/api/models`) — 10 endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/jobs` | Check job statuses (poll this) |
-| `POST` | `/api/jobs/reconstruct` | Build model from BV-BRC genome ID |
-| `POST` | `/api/jobs/gapfill` | Gapfill a model |
+| `GET` | `/api/models` | List user's models (with organism, taxonomy, domain metadata) |
+| `GET` | `/api/models/data?ref=` | Full model detail: reactions, compounds, genes, compartments, biomasses, organism info |
+| `POST` | `/api/models/edit` | Atomic model editing: add/remove/modify reactions, compounds, and biomass |
+| `POST` | `/api/models/copy` | Copy a model to a new workspace path |
+| `DELETE` | `/api/models?ref=` | Delete a model from workspace |
+| `GET` | `/api/models/export?ref=&format=` | Export as `json`, `sbml`, or `cobra-json` (SBML returns XML attachment) |
+| `GET` | `/api/models/gapfills?ref=` | List gapfill solutions for a model |
+| `POST` | `/api/models/gapfills/manage` | Integrate, unintegrate, or delete gapfill solutions |
+| `GET` | `/api/models/fba?ref=` | List FBA studies for a model |
+| `GET` | `/api/models/edits?ref=` | List edit history (stub — returns `[]`) |
+
+### Jobs (`/api/jobs`) — 6 endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/jobs` | Check job statuses — supports `ids` filter and status filters (`include_completed`, `include_failed`, etc.) |
+| `POST` | `/api/jobs/reconstruct` | Build metabolic model from a BV-BRC genome ID |
+| `POST` | `/api/jobs/gapfill` | Gapfill a model against a media condition |
 | `POST` | `/api/jobs/fba` | Run flux balance analysis |
-| `POST` | `/api/jobs/merge` | Merge multiple models |
+| `POST` | `/api/jobs/merge` | Merge multiple models into one |
 | `POST` | `/api/jobs/manage` | Delete or rerun jobs |
 
-### Biochemistry (`/api/biochem`)
+### Biochemistry (`/api/biochem`) — 4 endpoints, no auth required
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/biochem/compounds?query=` | Search compounds |
-| `GET` | `/api/biochem/reactions?query=` | Search reactions |
-| `GET` | `/api/biochem/compounds/{id}` | Get compound by ID |
-| `GET` | `/api/biochem/reactions/{id}` | Get reaction by ID |
-| `GET` | `/api/biochem/stats` | Database statistics |
-| `GET` | `/api/biochem/search?query=&type=` | Unified search |
+| `GET` | `/api/biochem/stats` | Database statistics (compound/reaction counts) |
+| `GET` | `/api/biochem/reactions?ids=` | Get reactions by comma-separated IDs |
+| `GET` | `/api/biochem/compounds?ids=` | Get compounds by comma-separated IDs |
+| `GET` | `/api/biochem/search?query=&type=` | Search compounds or reactions by name/ID (type: `compounds` or `reactions`, limit up to 200) |
 
-### Media and Workspace
+### Media (`/api/media`) — 3 endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/media/public` | List public media formulations |
-| `POST` | `/api/workspace/{op}` | Proxy to PATRIC workspace (ls, get, create, delete, etc.) |
+| `GET` | `/api/media/public` | List public media formulations from PATRIC workspace |
+| `GET` | `/api/media/mine` | List user's custom media (returns `[]` if folder doesn't exist) |
+| `GET` | `/api/media/export?ref=` | Export a media condition |
+
+### Workspace Proxy (`/api/workspace`) — 8 endpoints
+
+All workspace operations are POST-based proxies to the PATRIC Workspace service.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/workspace/ls` | List workspace contents |
+| `POST` | `/api/workspace/get` | Get workspace objects (supports `metadata_only` flag) |
+| `POST` | `/api/workspace/create` | Create workspace objects |
+| `POST` | `/api/workspace/copy` | Copy or move workspace objects |
+| `POST` | `/api/workspace/delete` | Delete workspace objects |
+| `POST` | `/api/workspace/metadata` | Update workspace object metadata |
+| `POST` | `/api/workspace/download-url` | Get download URLs for workspace objects |
+| `POST` | `/api/workspace/permissions` | List permissions on workspace objects |
 
 
 ## Architecture
@@ -222,7 +245,7 @@ Core dependencies (see `pyproject.toml`):
 
 KBUtilLib was designed for KBase notebook apps. Running it standalone requires these workarounds, applied in the job scripts. These should ideally be fixed upstream in KBUtilLib.
 
-### 1. BVBRCUtils.save() no-op
+### 1. BVBRCUtils.save() no-op — [PR #25](https://github.com/cshenry/KBUtilLib/pull/25) pending
 
 `build_kbase_genome_from_api()` calls `self.save("test_genome", genome)` which requires KBase SDK NotebookUtils. Patched as a no-op:
 
@@ -230,7 +253,7 @@ KBUtilLib was designed for KBase notebook apps. Running it standalone requires t
 BVBRCUtils.save = lambda self, name, obj: None
 ```
 
-### 2. Template .info attribute
+### 2. Template .info attribute — [PR #26](https://github.com/cshenry/KBUtilLib/pull/26) pending
 
 `MSTemplateBuilder.from_dict().build()` does not set the `.info` attribute on the template object, but `build_metabolic_model()` references it. Patched with a mock class:
 
@@ -283,9 +306,15 @@ ws.create({"objects": [[path, "modelfolder", folder_meta, ""]], "overwrite": 1})
 ws.update_metadata({"objects": [[path, folder_meta]]})
 ```
 
-### Planned upstream fixes
+### Pending upstream PRs
 
-Chris Henry has agreed to add a `template_source="git"` configuration parameter to KBUtilLib that would load templates from local git repos, eliminating workarounds 2 and 4.
+Three KBUtilLib PRs are open (all approved by Chris Henry, awaiting merge):
+
+- **[PR #24](https://github.com/cshenry/KBUtilLib/pull/24)** — `PatricWSUtils.get_media()` for TSV+JSON media parsing. Once merged, removes `job_scripts/utils.py` workaround.
+- **[PR #25](https://github.com/cshenry/KBUtilLib/pull/25)** — Remove debug `self.save()` from `BVBRCUtils`. Once merged, removes monkey-patch (workaround 1).
+- **[PR #26](https://github.com/cshenry/KBUtilLib/pull/26)** — Move template `.info` refs from `build_metabolic_model()` to `kb_build_metabolic_models()`. Once merged, removes mock `_Info` class (workaround 2).
+
+Chris has also agreed to add a `template_source="git"` configuration parameter to KBUtilLib, which would eliminate workaround 4.
 
 
 ## KBUtilLib Initialization
@@ -444,7 +473,7 @@ The build context is the **parent directory** containing all sibling repos (not 
 
 ### Phase 2 features
 
-- Model editing endpoints (edit reactions, compounds)
+- ~~Model editing endpoints~~ (done — `POST /api/models/edit`)
 - PlantSEED endpoints (pipeline, annotate, features, compare regions)
 - Import KBase models
 - Delete FBA studies
@@ -461,14 +490,15 @@ The build context is the **parent directory** containing all sibling repos (not 
 
 ### Upstream improvements needed
 
-| Repo | Issue | Workaround |
-|------|-------|------------|
-| KBUtilLib | No `template_source="git"` config | Mock `.info` attribute + dummy `KB_AUTH_TOKEN` (workarounds 2, 4) |
-| KBUtilLib | `BVBRCUtils.save()` requires NotebookUtils | No-op monkey-patch (workaround 1) |
-| KBUtilLib | `MSGenomeClassifier` needs pickle files not in repo | Pass `classifier=None` + explicit template type (workaround 3) |
-| KBUtilLib | PR #24 pending: PATRIC media TSV parsing | Custom TSV parser in `job_scripts/utils.py` |
-| ModelSEEDpy | `run_gapfilling()` doesn't auto-integrate | Explicit `integrate_gapfill_solution()` + `create_kb_gapfilling_data()` calls (workaround 5) |
-| PATRIC WS | `ws.create()` doesn't persist metadata | Explicit `ws.update_metadata()` after create (workaround 6) |
+| Repo | Issue | Status | Workaround |
+|------|-------|--------|------------|
+| KBUtilLib | `BVBRCUtils.save()` debug call requires NotebookUtils | [PR #25](https://github.com/cshenry/KBUtilLib/pull/25) — awaiting merge | No-op monkey-patch (workaround 1) |
+| KBUtilLib | `build_metabolic_model()` references `.info` on non-WS templates | [PR #26](https://github.com/cshenry/KBUtilLib/pull/26) — awaiting merge | Mock `_Info` class (workaround 2) |
+| KBUtilLib | `MSGenomeClassifier` needs pickle files not in repo | Open | Pass `classifier=None` + explicit template type (workaround 3) |
+| KBUtilLib | No `template_source="git"` config | Open — Chris agreed to add | Dummy `KB_AUTH_TOKEN` env var (workaround 4) |
+| KBUtilLib | PATRIC media TSV parsing not supported | [PR #24](https://github.com/cshenry/KBUtilLib/pull/24) — approved, awaiting merge | Custom TSV parser in `job_scripts/utils.py` |
+| ModelSEEDpy | `run_gapfilling()` doesn't auto-integrate | Open | Explicit `integrate_gapfill_solution()` + `create_kb_gapfilling_data()` (workaround 5) |
+| PATRIC WS | `ws.create()` doesn't persist metadata | Open | Explicit `ws.update_metadata()` after create (workaround 6) |
 
 
 ## License
