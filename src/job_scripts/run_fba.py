@@ -39,6 +39,7 @@ def main():
 
     params = json.loads(args.params)
     model_ref = params.get("model", "")
+    media_ref = params.get("media")
 
     try:
         # Add project root to path for imports
@@ -48,6 +49,7 @@ def main():
         from modelseed_api.services.workspace_service import WorkspaceService
         from modelseed_api.services.export_service import workspace_model_to_cobra
 
+        update_job(job_file, {"progress": "Loading model..."})
         ws = WorkspaceService(args.token)
         model_path = f"{model_ref}/model"
         result = ws.get({"objects": [model_path]})
@@ -79,6 +81,7 @@ def main():
         cobra_model = workspace_model_to_cobra(model_obj)
 
         # Run FBA
+        update_job(job_file, {"progress": "Running FBA..."})
         solution = cobra_model.optimize()
 
         # Collect results
@@ -87,9 +90,77 @@ def main():
             if abs(solution.fluxes[rxn.id]) > 1e-6:
                 fluxes[rxn.id] = round(solution.fluxes[rxn.id], 6)
 
-        result_data = {
-            "objective_value": round(solution.objective_value, 6) if solution.objective_value else 0,
+        objective_value = round(solution.objective_value, 6) if solution.objective_value else 0
+
+        # Determine next FBA ID (fba.0, fba.1, ...)
+        # Use whichever key the model already has (fbaFormulations for legacy models)
+        fba_key = "fbaFormulations" if "fbaFormulations" in model_obj else "fba_studies"
+        existing_studies = model_obj.get(fba_key, [])
+        fba_idx = len(existing_studies)
+        fba_id = f"fba.{fba_idx}"
+
+        # Build FBA study record for the model object
+        fba_record = {
+            "id": fba_id,
+            "ref": f"{model_ref}/{fba_id}",
+            "media_ref": media_ref or "Complete",
+            "objectiveValue": objective_value,
+            "objective_function": "bio1",
+            "rundate": now(),
+        }
+
+        # Save FBA result object to workspace
+        update_job(job_file, {"progress": "Saving FBA results..."})
+        fba_result_obj = {
+            "id": fba_id,
+            "model_ref": model_ref,
+            "media_ref": media_ref or "Complete",
+            "objectiveValue": objective_value,
             "status": solution.status,
+            "nonzero_fluxes": len(fluxes),
+            "fluxes": fluxes,
+            "rundate": now(),
+        }
+        ws.create({
+            "objects": [[
+                f"{model_ref}/{fba_id}",
+                "fba",
+                {},
+                json.dumps(fba_result_obj),
+            ]],
+            "overwrite": 1,
+        })
+
+        # Append FBA study to model and save back (use the same key the model uses)
+        if fba_key not in model_obj:
+            model_obj[fba_key] = []
+        model_obj[fba_key].append(fba_record)
+        ws.create({
+            "objects": [[
+                f"{model_ref}/model",
+                "model",
+                {},
+                json.dumps(model_obj),
+            ]],
+            "overwrite": 1,
+        })
+
+        # Update folder metadata with FBA count
+        try:
+            ws.update_metadata({
+                "objects": [[model_ref, {
+                    "fba_count": str(fba_idx + 1),
+                }]],
+            })
+        except Exception:
+            pass
+
+        result_data = {
+            "status": "success",
+            "model_ref": model_ref,
+            "fba_id": fba_id,
+            "objective_value": objective_value,
+            "fba_status": solution.status,
             "nonzero_fluxes": len(fluxes),
         }
 
@@ -100,8 +171,8 @@ def main():
             "result": result_data,
         })
 
-        print(f"FBA completed: objective={result_data['objective_value']}, "
-              f"status={result_data['status']}, fluxes={result_data['nonzero_fluxes']}")
+        print(f"FBA completed: {fba_id}, objective={objective_value}, "
+              f"status={solution.status}, fluxes={len(fluxes)}")
 
     except Exception as e:
         update_job(job_file, {

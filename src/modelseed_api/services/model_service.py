@@ -1071,13 +1071,20 @@ class ModelService:
 
         model_obj = self._parse_ws_data(result)
 
+        # Merge both keys — legacy models use fbaFormulations, new ones use fba_studies
+        all_fba = model_obj.get("fbaFormulations", []) + model_obj.get("fba_studies", [])
+        seen_ids: set[str] = set()
         fbas = []
-        for fba in model_obj.get("fbaFormulations", model_obj.get("fba_studies", [])):
+        for fba in all_fba:
+            fba_id = fba.get("id", "")
+            if fba_id in seen_ids:
+                continue
+            seen_ids.add(fba_id)
             fbas.append(
                 {
                     "rundate": fba.get("rundate", ""),
-                    "id": fba.get("id", ""),
-                    "ref": fba.get("ref", f"{model_ref}/fba.{fba.get('id', '')}"),
+                    "id": fba_id,
+                    "ref": fba.get("ref", f"{model_ref}/fba.{fba_id}"),
                     "objective": fba.get("objectiveValue", fba.get("objective", 0.0)),
                     "media_ref": fba.get("media_ref", ""),
                     "objective_function": fba.get("objectiveFunction", fba.get("objective_function", "")),
