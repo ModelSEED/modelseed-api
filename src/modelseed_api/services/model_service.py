@@ -74,6 +74,9 @@ class ModelService:
                 )
                 if not is_model:
                     continue
+                # Skip entries with empty path (corrupt/legacy workspace data)
+                if not obj_meta[2]:
+                    continue
                 models.append(
                     {
                         "id": user_meta.get("id", obj_meta[0]),
@@ -345,22 +348,31 @@ class ModelService:
         gf_rxn_index = {}
         for rxn in model_obj.get("modelreactions", []):
             gf_data = rxn.get("gapfill_data", {})
+            if not isinstance(gf_data, dict):
+                continue
             for gfid, sol_data in gf_data.items():
                 if gfid not in gf_rxn_index:
                     gf_rxn_index[gfid] = []
-                # sol_data is {"0": [direction, integrated_flag, features]}
-                for sol_idx, sol_info in sol_data.items():
-                    direction = sol_info[0] if isinstance(sol_info, list) else "="
-                    # Extract compartment from reaction ID (e.g., rxn00001_c0 -> c0)
-                    rxn_id = rxn.get("id", "")
-                    compartment = ""
-                    if "_" in rxn_id:
-                        compartment = rxn_id.rsplit("_", 1)[-1]
+                rxn_id = rxn.get("id", "")
+                compartment = rxn_id.rsplit("_", 1)[-1] if "_" in rxn_id else ""
+
+                if isinstance(sol_data, str):
+                    # Legacy format: "added:>" or "reversed:<"
+                    direction = sol_data.split(":")[-1] if ":" in sol_data else "="
                     gf_rxn_index[gfid].append({
                         "reaction": rxn_id,
                         "direction": direction,
                         "compartment": compartment,
                     })
+                elif isinstance(sol_data, dict):
+                    # ModelSEEDpy format: {"0": [direction, integrated_flag, features]}
+                    for sol_idx, sol_info in sol_data.items():
+                        direction = sol_info[0] if isinstance(sol_info, list) else "="
+                        gf_rxn_index[gfid].append({
+                            "reaction": rxn_id,
+                            "direction": direction,
+                            "compartment": compartment,
+                        })
 
         gapfillings = []
         for gf in model_obj.get("gapfillings", []):

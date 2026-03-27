@@ -46,8 +46,11 @@ async def list_my_media(
     try:
         return ws.ls({"paths": [media_path]})
     except WorkspaceError as e:
-        # User may not have a media folder yet
-        if "not found" in e.message.lower() or "does not exist" in e.message.lower():
+        # User may not have a media folder yet — workspace returns 404 or
+        # 403 ("permission to /") depending on path format (e.g., @ in username)
+        msg = e.message.lower()
+        if ("not found" in msg or "does not exist" in msg
+                or "permission" in msg):
             return {media_path: []}
         raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
