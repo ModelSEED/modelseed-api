@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 import requests
@@ -31,8 +32,13 @@ class WorkspaceService:
         self.url = settings.workspace_url
         self.timeout = settings.workspace_timeout
 
+    # Retry transient errors (500, 502, 503, 504, connection failures)
+    _RETRYABLE_CODES = {500, 502, 503, 504}
+    _MAX_RETRIES = 3
+    _RETRY_DELAYS = (1, 3, 5)  # seconds between retries
+
     def _call(self, method: str, params: dict) -> Any:
-        """Make a JSON-RPC 1.1 call to the workspace service."""
+        """Make a JSON-RPC 1.1 call to the workspace service with retry."""
         logger.debug("Workspace.%s %s", method, _summarize_params(params))
         payload = {
             "version": "1.1",
@@ -43,43 +49,73 @@ class WorkspaceService:
             "Content-Type": "application/json",
             "Authorization": self.token,
         }
-        try:
-            response = requests.post(
-                self.url, json=payload, headers=headers, timeout=self.timeout,
-            )
-        except requests.RequestException as e:
-            logger.error("Workspace.%s connection failed: %s", method, e)
-            raise WorkspaceError(f"Cannot reach workspace service: {e}")
 
-        # Try to parse JSON body regardless of HTTP status — workspace often
-        # returns JSON-RPC error objects inside non-200 responses
-        try:
-            result = response.json()
-        except ValueError:
-            if not response.ok:
-                logger.error("Workspace.%s HTTP %d (non-JSON): %s", method, response.status_code, response.text[:200])
+        last_exc: Exception | None = None
+        for attempt in range(self._MAX_RETRIES):
+            try:
+                response = requests.post(
+                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                )
+            except requests.RequestException as e:
+                last_exc = WorkspaceError(f"Cannot reach workspace service: {e}")
+                logger.warning("Workspace.%s connection failed (attempt %d/%d): %s",
+                               method, attempt + 1, self._MAX_RETRIES, e)
+                if attempt < self._MAX_RETRIES - 1:
+                    time.sleep(self._RETRY_DELAYS[attempt])
+                continue
+
+            # Try to parse JSON body regardless of HTTP status — workspace often
+            # returns JSON-RPC error objects inside non-200 responses
+            try:
+                result = response.json()
+            except ValueError:
+                if not response.ok:
+                    if response.status_code in self._RETRYABLE_CODES and attempt < self._MAX_RETRIES - 1:
+                        logger.warning("Workspace.%s HTTP %d (attempt %d/%d), retrying...",
+                                       method, response.status_code, attempt + 1, self._MAX_RETRIES)
+                        time.sleep(self._RETRY_DELAYS[attempt])
+                        continue
+                    logger.error("Workspace.%s HTTP %d (non-JSON): %s", method, response.status_code, response.text[:200])
+                    raise WorkspaceError(
+                        f"Workspace HTTP {response.status_code}: {response.text[:500]}",
+                        response.status_code,
+                    )
+                return None
+
+            if "error" in result:
+                error = result["error"]
+                error_code = error.get("code", -1)
+                # Retry on server-side 500 errors (not auth/not-found errors)
+                if response.status_code in self._RETRYABLE_CODES and attempt < self._MAX_RETRIES - 1:
+                    logger.warning("Workspace.%s error [%s] (attempt %d/%d), retrying: %s",
+                                   method, error_code, attempt + 1, self._MAX_RETRIES, error.get("message", "?"))
+                    time.sleep(self._RETRY_DELAYS[attempt])
+                    continue
+                logger.error("Workspace.%s error [%s]: %s", method, error_code, error.get("message", "?"))
                 raise WorkspaceError(
-                    f"Workspace HTTP {response.status_code}: {response.text[:500]}",
+                    error.get("message", "Unknown workspace error"),
+                    error_code,
+                )
+
+            if not response.ok:
+                if response.status_code in self._RETRYABLE_CODES and attempt < self._MAX_RETRIES - 1:
+                    logger.warning("Workspace.%s HTTP %d (attempt %d/%d), retrying...",
+                                   method, response.status_code, attempt + 1, self._MAX_RETRIES)
+                    time.sleep(self._RETRY_DELAYS[attempt])
+                    continue
+                logger.error("Workspace.%s HTTP %d", method, response.status_code)
+                raise WorkspaceError(
+                    f"Workspace HTTP {response.status_code}",
                     response.status_code,
                 )
-            return None
 
-        if "error" in result:
-            error = result["error"]
-            logger.error("Workspace.%s error [%s]: %s", method, error.get("code", "?"), error.get("message", "?"))
-            raise WorkspaceError(
-                error.get("message", "Unknown workspace error"),
-                error.get("code", -1),
-            )
+            return result.get("result", [None])[0]
 
-        if not response.ok:
-            logger.error("Workspace.%s HTTP %d", method, response.status_code)
-            raise WorkspaceError(
-                f"Workspace HTTP {response.status_code}",
-                response.status_code,
-            )
-
-        return result.get("result", [None])[0]
+        # All retries exhausted
+        if last_exc:
+            logger.error("Workspace.%s failed after %d attempts", method, self._MAX_RETRIES)
+            raise last_exc
+        raise WorkspaceError(f"Workspace.{method} failed after {self._MAX_RETRIES} attempts")
 
     def ls(self, params: dict) -> Any:
         """List workspace contents."""
