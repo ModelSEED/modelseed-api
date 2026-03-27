@@ -120,7 +120,18 @@ def main():
                 modelseed_path=settings.modelseed_db_path,
                 cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
             )
-            ms_media = ws_utils.get_media(media_ref, as_msmedia=True)
+            # Retry media loading — KBUtilLib's workspace client has no retry
+            import time
+            for _attempt in range(3):
+                try:
+                    ms_media = ws_utils.get_media(media_ref, as_msmedia=True)
+                    break
+                except Exception as _e:
+                    if _attempt < 2 and "500" in str(_e):
+                        print(f"Media load failed (attempt {_attempt + 1}/3), retrying: {_e}")
+                        time.sleep(2 * (_attempt + 1))
+                    else:
+                        raise
 
         # Step 5: Run gapfilling
         update_job(job_file, {"progress": "Running gapfilling..."})

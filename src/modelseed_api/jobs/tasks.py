@@ -95,11 +95,24 @@ def _fetch_model_obj(ws, model_ref: str, token: str) -> dict:
 
 
 def _load_media(media_ref: str, token: str):
-    """Load media from workspace and convert to MSMedia object."""
+    """Load media from workspace and convert to MSMedia object.
+
+    Retries up to 3 times on transient 500 errors since KBUtilLib's
+    workspace client has no built-in retry logic.
+    """
+    import time
     from kbutillib import PatricWSUtils
     kwargs = _init_kwargs(token)
     ws_utils = PatricWSUtils(**kwargs)
-    return ws_utils.get_media(media_ref, as_msmedia=True)
+    for attempt in range(3):
+        try:
+            return ws_utils.get_media(media_ref, as_msmedia=True)
+        except Exception as e:
+            if attempt < 2 and "500" in str(e):
+                logger.warning("Media load failed (attempt %d/3), retrying: %s", attempt + 1, e)
+                time.sleep(2 * (attempt + 1))
+            else:
+                raise
 
 
 @app.task(bind=True, name="modelseed.reconstruct")
