@@ -5,9 +5,12 @@ Both auth methods go through the nexus_emulation service (OAuth1).
 The token is passed through to the Workspace service for validation.
 """
 
+import logging
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
+
+logger = logging.getLogger("modelseed_api.auth")
 
 
 @dataclass
@@ -56,6 +59,8 @@ async def get_current_user(request: Request) -> AuthUser:
     token = token.strip('"').strip("'")
 
     username = _extract_username(token)
+    token_type = "RAST" if "rast.nmpdr.org" in token else "PATRIC"
+    logger.debug("Auth: un=%s (%s token)", username, token_type)
     return AuthUser(username=username, token=token)
 
 

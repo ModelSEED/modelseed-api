@@ -8,11 +8,14 @@ us from eventual workspace replacement.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import requests
 
 from modelseed_api.config import settings
+
+logger = logging.getLogger("modelseed_api.workspace")
 
 
 class WorkspaceService:
@@ -30,6 +33,7 @@ class WorkspaceService:
 
     def _call(self, method: str, params: dict) -> Any:
         """Make a JSON-RPC 1.1 call to the workspace service."""
+        logger.debug("Workspace.%s %s", method, _summarize_params(params))
         payload = {
             "version": "1.1",
             "method": f"Workspace.{method}",
@@ -44,6 +48,7 @@ class WorkspaceService:
                 self.url, json=payload, headers=headers, timeout=self.timeout,
             )
         except requests.RequestException as e:
+            logger.error("Workspace.%s connection failed: %s", method, e)
             raise WorkspaceError(f"Cannot reach workspace service: {e}")
 
         # Try to parse JSON body regardless of HTTP status — workspace often
@@ -52,6 +57,7 @@ class WorkspaceService:
             result = response.json()
         except ValueError:
             if not response.ok:
+                logger.error("Workspace.%s HTTP %d (non-JSON): %s", method, response.status_code, response.text[:200])
                 raise WorkspaceError(
                     f"Workspace HTTP {response.status_code}: {response.text[:500]}",
                     response.status_code,
@@ -60,12 +66,14 @@ class WorkspaceService:
 
         if "error" in result:
             error = result["error"]
+            logger.error("Workspace.%s error [%s]: %s", method, error.get("code", "?"), error.get("message", "?"))
             raise WorkspaceError(
                 error.get("message", "Unknown workspace error"),
                 error.get("code", -1),
             )
 
         if not response.ok:
+            logger.error("Workspace.%s HTTP %d", method, response.status_code)
             raise WorkspaceError(
                 f"Workspace HTTP {response.status_code}",
                 response.status_code,
@@ -104,6 +112,19 @@ class WorkspaceService:
     def list_permissions(self, params: dict) -> Any:
         """List permissions on workspace objects."""
         return self._call("list_permissions", params)
+
+
+def _summarize_params(params: dict) -> str:
+    """Summarize params for debug logging (paths/objects only, skip large data)."""
+    parts = []
+    for key in ("paths", "objects"):
+        if key in params:
+            val = params[key]
+            if isinstance(val, list):
+                # Show first few paths/object refs
+                items = [v[0] if isinstance(v, list) else str(v) for v in val[:3]]
+                parts.append(f"{key}={items}")
+    return " ".join(parts) if parts else str({k: v for k, v in params.items() if k != "data"})[:200]
 
 
 class WorkspaceError(Exception):

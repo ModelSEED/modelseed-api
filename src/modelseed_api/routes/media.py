@@ -1,6 +1,7 @@
 """Media routes - list public/user media, export."""
 
 from typing import Any, Optional
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -57,6 +58,7 @@ async def export_media(
     user: AuthUser = Depends(get_current_user),
 ) -> Any:
     """Export a media condition as TSV."""
+    ref = unquote(ref)
     ws = WorkspaceService(user.token)
     try:
         result = ws.get({"objects": [ref]})

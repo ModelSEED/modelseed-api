@@ -1,6 +1,7 @@
 """ModelSEED API - FastAPI application entry point."""
 
 import logging
+import time
 import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,12 +11,47 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from modelseed_api.config import settings
 from modelseed_api.routes import biochem, jobs, media, models, workspace
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("modelseed_api")
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log one line per request: METHOD /path [user] -> status (duration)."""
+
+    _skip_prefixes = ("/api/health", "/demo/", "/docs", "/openapi.json", "/redoc")
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if any(path.startswith(p) for p in self._skip_prefixes):
+            return await call_next(request)
+
+        start = time.time()
+
+        # Extract username from token (best-effort, never block the request)
+        username = "anon"
+        token = request.headers.get("Authorization") or request.headers.get("Authentication")
+        if token:
+            raw = token.removeprefix("Bearer ").strip('"').strip("'")
+            for part in raw.split("|"):
+                if part.startswith("un="):
+                    username = part[3:]
+                    break
+
+        response = await call_next(request)
+        duration_ms = int((time.time() - start) * 1000)
+        msg = f"{request.method} {path} [{username}] -> {response.status_code} ({duration_ms}ms)"
+
+        if response.status_code >= 400:
+            logger.warning(msg)
+        else:
+            logger.info(msg)
+
+        return response
 
 
 @asynccontextmanager
@@ -37,7 +73,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# Middleware (order matters: outermost = first to run)
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

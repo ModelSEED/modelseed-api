@@ -1,6 +1,7 @@
 """Model routes - CRUD, gapfill listing, FBA listing, export."""
 
 from typing import Any, Optional
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -55,6 +56,7 @@ async def get_model(
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
     """Get full model data including reactions, compounds, genes, compartments, biomasses."""
+    ref = unquote(ref)
     svc = _get_svc(user)
     try:
         return svc.get_model(ref)
@@ -70,6 +72,7 @@ async def delete_model(
     user: AuthUser = Depends(get_current_user),
 ) -> Any:
     """Delete a model from the workspace."""
+    ref = unquote(ref)
     svc = _get_svc(user)
     try:
         return svc.delete_model(ref)
@@ -101,6 +104,7 @@ async def export_model(
 
     Supported formats: json, sbml, cobrapy.
     """
+    ref = unquote(ref)
     svc = _get_svc(user)
     format = format.lower()
     try:
@@ -136,6 +140,7 @@ async def list_gapfills(
     user: AuthUser = Depends(get_current_user),
 ) -> list[dict]:
     """List gapfilling solutions for a model."""
+    ref = unquote(ref)
     svc = _get_svc(user)
     try:
         return svc.list_gapfill_solutions(ref)
@@ -166,6 +171,7 @@ async def list_fba_studies(
     user: AuthUser = Depends(get_current_user),
 ) -> list[dict]:
     """List FBA studies associated with a model."""
+    ref = unquote(ref)
     svc = _get_svc(user)
     try:
         return svc.list_fba_studies(ref)
