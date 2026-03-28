@@ -95,10 +95,10 @@ class ModelService:
                 # Skip entries with empty path (corrupt/legacy workspace data)
                 if not obj_meta[2]:
                     continue
-                # Deduplicate: workspace can return the same object as both
-                # "modelfolder" and "folder" type — keep first occurrence by ref
-                model_ref = obj_meta[2] + obj_meta[0]
-                if any(m["ref"] == model_ref for m in models):
+                # Deduplicate: workspace can return the same object under
+                # different names (e.g. ".name" and "name") or types
+                model_id = user_meta.get("id", obj_meta[0])
+                if any(m["id"] == model_id for m in models):
                     continue
                 models.append(
                     {
