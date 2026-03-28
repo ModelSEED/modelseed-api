@@ -33,5 +33,11 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Screenshots and test artifacts
+*.png
+
 # Claude
 .claude/

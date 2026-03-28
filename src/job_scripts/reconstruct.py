@@ -170,11 +170,11 @@ def main():
         n_compartments = len(mdlutl.model.compartments)
         classification = output.get("Class", template_type)
 
-        # Step 6: Save model to PATRIC workspace
+        # Step 6: Save model to storage
         if output_path:
-            update_job(job_file, {"progress": "Saving to workspace..."})
-            from modelseed_api.services.workspace_service import WorkspaceService
-            ws = WorkspaceService(args.token)
+            update_job(job_file, {"progress": "Saving model..."})
+            from modelseed_api.services.storage_factory import get_storage_service
+            ws = get_storage_service(args.token)
 
             # Serialize to workspace format (modelreactions, modelcompounds, etc.)
             # mdlutl.model is an FBAModel (from cobrakbase) — get_data() returns

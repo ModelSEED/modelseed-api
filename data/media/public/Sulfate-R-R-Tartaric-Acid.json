@@ -1,0 +1,138 @@
+{
+  "name": "Sulfate-R-R-Tartaric-Acid",
+  "mediacompounds": [
+    {
+      "id": "cpd00027",
+      "name": "D-Glucose",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00013",
+      "name": "NH3",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00009",
+      "name": "Phosphate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00666",
+      "name": "Tartrate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00063",
+      "name": "Ca2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00011",
+      "name": "CO2",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd10516",
+      "name": "fe3",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00067",
+      "name": "H+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00001",
+      "name": "H2O",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00205",
+      "name": "K+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00254",
+      "name": "Mg",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00971",
+      "name": "Na+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00007",
+      "name": "O2",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00099",
+      "name": "Cl-",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00058",
+      "name": "Cu2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00149",
+      "name": "Co2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00030",
+      "name": "Mn2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00034",
+      "name": "Zn2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd10515",
+      "name": "Fe2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    }
+  ]
+}

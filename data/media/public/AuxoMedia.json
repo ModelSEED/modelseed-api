@@ -1,0 +1,362 @@
+{
+  "name": "AuxoMedia",
+  "mediacompounds": [
+    {
+      "id": "cpd00020",
+      "name": "Pyruvate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00013",
+      "name": "NH3",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00009",
+      "name": "Phosphate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00048",
+      "name": "Sulfate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00063",
+      "name": "Ca2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00011",
+      "name": "CO2",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 0.0
+    },
+    {
+      "id": "cpd10516",
+      "name": "Fe+3",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00067",
+      "name": "H+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00001",
+      "name": "H2O",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00205",
+      "name": "K+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00254",
+      "name": "Mg",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00971",
+      "name": "Na+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00007",
+      "name": "O2",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00099",
+      "name": "Cl-",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00058",
+      "name": "Cu2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00149",
+      "name": "Co2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00030",
+      "name": "Mn2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00034",
+      "name": "Zn2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd10515",
+      "name": "Fe+2",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00060",
+      "name": "L-Methionine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00084",
+      "name": "L-Cysteine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00035",
+      "name": "L-Alanine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00161",
+      "name": "L-Threonine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00156",
+      "name": "L-Valine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00066",
+      "name": "L-Phenylalanine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00065",
+      "name": "L-Tryptophan",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00069",
+      "name": "L-Tyrosine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00322",
+      "name": "L-Isoleucine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00129",
+      "name": "L-Proline",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00107",
+      "name": "L-Leucine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00041",
+      "name": "L-Aspartate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00051",
+      "name": "L-Arginine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00119",
+      "name": "L-Histidine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00039",
+      "name": "L-Lysine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00033",
+      "name": "Glycine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00054",
+      "name": "L-Serine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00053",
+      "name": "L-Glutamine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00023",
+      "name": "L-Glutamate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00132",
+      "name": "L-Asparagine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00215",
+      "name": "Pyridoxal",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00104",
+      "name": "BIOT",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00305",
+      "name": "Thiamin",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00393",
+      "name": "Folate",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00644",
+      "name": "PAN",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00220",
+      "name": "Riboflavin",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00218",
+      "name": "Niacin",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00635",
+      "name": "Cbl",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00557",
+      "name": "Siroheme",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00028",
+      "name": "Heme",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00264",
+      "name": "Spermidine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    },
+    {
+      "id": "cpd00118",
+      "name": "Putrescine",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 5.0
+    }
+  ]
+}

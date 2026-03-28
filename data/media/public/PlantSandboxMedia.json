@@ -1,0 +1,82 @@
+{
+  "name": "PlantSandboxMedia",
+  "mediacompounds": [
+    {
+      "id": "cpd00001",
+      "name": "H2O",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00009",
+      "name": "Phosphate",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00011",
+      "name": "CO2",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00067",
+      "name": "H+",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00002",
+      "name": "ATP",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00005",
+      "name": "NADPH",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00006",
+      "name": "NADP",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00008",
+      "name": "ADP",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00007",
+      "name": "Oxygen",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd00727",
+      "name": "2-Phosphoglycolate",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    },
+    {
+      "id": "cpd11632",
+      "name": "hn",
+      "concentration": 0.01,
+      "minflux": -1000.0,
+      "maxflux": 1000.0
+    }
+  ]
+}

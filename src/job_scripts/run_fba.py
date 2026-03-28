@@ -45,12 +45,12 @@ def main():
         # Add project root to path for imports
         sys.path.insert(0, str(Path(__file__).parent.parent))
 
-        # Fetch model from workspace
-        from modelseed_api.services.workspace_service import WorkspaceService
+        # Fetch model from storage
+        from modelseed_api.services.storage_factory import get_storage_service
         from modelseed_api.services.export_service import workspace_model_to_cobra
 
         update_job(job_file, {"progress": "Loading model..."})
-        ws = WorkspaceService(args.token)
+        ws = get_storage_service(args.token)
         model_path = f"{model_ref}/model"
         result = ws.get({"objects": [model_path]})
 

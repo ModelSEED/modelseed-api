@@ -43,6 +43,7 @@ RUN pip install --no-cache-dir -e /deps/cobrakbase && \
 
 # Copy and install modelseed-api
 COPY modelseed-api/src/ /app/src/
+COPY modelseed-api/data/ /app/data/
 COPY modelseed-api/pyproject.toml /app/
 RUN pip install --no-cache-dir -e ".[modeling]"
 

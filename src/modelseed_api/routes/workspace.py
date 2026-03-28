@@ -19,13 +19,14 @@ from modelseed_api.schemas.workspace import (
     WSPermissionsRequest,
     WSUpdateMetadataRequest,
 )
-from modelseed_api.services.workspace_service import WorkspaceError, WorkspaceService
+from modelseed_api.services.storage_factory import get_storage_service
+from modelseed_api.services.workspace_service import WorkspaceError
 
 router = APIRouter()
 
 
-def _get_ws(user: AuthUser) -> WorkspaceService:
-    return WorkspaceService(user.token)
+def _get_ws(user: AuthUser):
+    return get_storage_service(user.token)
 
 
 def _handle_ws_error(e: WorkspaceError):

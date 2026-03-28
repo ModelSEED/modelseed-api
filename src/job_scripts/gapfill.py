@@ -52,14 +52,14 @@ def main():
     try:
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from modelseed_api.config import settings
-        from modelseed_api.services.workspace_service import WorkspaceService
+        from modelseed_api.services.storage_factory import get_storage_service
 
         # WORKAROUND: cobrakbase.KBaseAPI() requires non-empty KB_AUTH_TOKEN
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
 
-        # Step 1: Fetch model from workspace
+        # Step 1: Fetch model from storage
         update_job(job_file, {"progress": "Loading model..."})
-        ws = WorkspaceService(args.token)
+        ws = get_storage_service(args.token)
         model_path = f"{model_ref}/model"
         result = ws.get({"objects": [model_path]})
 

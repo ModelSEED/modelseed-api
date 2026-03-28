@@ -17,7 +17,7 @@ from modelseed_api.schemas.models import (
     ModelData,
     ModelStats,
 )
-from modelseed_api.services.workspace_service import WorkspaceService
+from modelseed_api.services.storage_factory import get_storage_service
 
 
 def _safe_int(val, default=0):
@@ -54,7 +54,7 @@ class ModelService:
     """
 
     def __init__(self, token: str):
-        self.ws = WorkspaceService(token)
+        self.ws = get_storage_service(token)
         self.token = token
 
     def list_models(self, path: Optional[str] = None, username: str = "") -> list[dict]:

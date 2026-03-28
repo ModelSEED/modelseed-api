@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: list[str] = ["*"]
 
-    # PATRIC Workspace Service
+    # Storage backend: "workspace" (PATRIC) or "local" (filesystem)
+    storage_backend: str = "workspace"
+    local_data_dir: str = "~/.modelseed/data"
+
+    # PATRIC Workspace Service (only used when storage_backend == "workspace")
     workspace_url: str = "https://p3.theseed.org/services/Workspace"
 
     # Shock file storage

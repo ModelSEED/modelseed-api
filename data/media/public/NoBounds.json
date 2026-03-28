@@ -1,0 +1,47 @@
+{
+  "name": "NoBounds",
+  "mediacompounds": [
+    {
+      "id": "cpd00099",
+      "name": "Cl-",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00058",
+      "name": "Cu2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00149",
+      "name": "Co2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00030",
+      "name": "Mn2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd00034",
+      "name": "Zn2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    },
+    {
+      "id": "cpd10515",
+      "name": "Fe2+",
+      "concentration": 0.001,
+      "minflux": -100.0,
+      "maxflux": 100.0
+    }
+  ]
+}

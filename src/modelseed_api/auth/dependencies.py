@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
+from modelseed_api.config import settings
+
 logger = logging.getLogger("modelseed_api.auth")
 
 
@@ -42,8 +44,25 @@ async def get_current_user(request: Request) -> AuthUser:
 
     The frontend sends the token as either 'Authorization' or 'Authentication' header.
     We support both for backward compatibility.
+
+    When storage_backend == "local", authentication is relaxed: any token is
+    accepted (username extracted if possible), and requests without a token
+    default to user "local".
     """
     token = request.headers.get("Authorization") or request.headers.get("Authentication")
+
+    # Local storage mode: relax auth requirements
+    if settings.storage_backend == "local":
+        username = "local"
+        if token:
+            token = token.removeprefix("Bearer ").strip('"').strip("'")
+            try:
+                username = _extract_username(token)
+            except HTTPException:
+                pass
+        else:
+            token = "local-dev-token"
+        return AuthUser(username=username, token=token)
 
     if not token:
         raise HTTPException(

@@ -200,11 +200,11 @@ def reconstruct(
     n_compartments = len(mdlutl.model.compartments)
     classification = output.get("Class", template_type)
 
-    # Step 6: Save model to PATRIC workspace
+    # Step 6: Save model to storage
     if output_path:
-        self.update_state(state="PROGRESS", meta={"status": "Saving to workspace..."})
-        from modelseed_api.services.workspace_service import WorkspaceService
-        ws = WorkspaceService(token)
+        self.update_state(state="PROGRESS", meta={"status": "Saving model..."})
+        from modelseed_api.services.storage_factory import get_storage_service
+        ws = get_storage_service(token)
 
         if not hasattr(mdlutl.model, 'get_data'):
             from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
@@ -284,8 +284,8 @@ def gapfill(
 
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
 
-    from modelseed_api.services.workspace_service import WorkspaceService
-    ws = WorkspaceService(token)
+    from modelseed_api.services.storage_factory import get_storage_service
+    ws = get_storage_service(token)
     model_obj = _fetch_model_obj(ws, model_ref, token)
 
     # Load as FBAModel (preserves workspace format for save-back)
@@ -376,10 +376,10 @@ def run_fba(
     """
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
 
-    from modelseed_api.services.workspace_service import WorkspaceService
+    from modelseed_api.services.storage_factory import get_storage_service
     from modelseed_api.services.export_service import workspace_model_to_cobra
 
-    ws = WorkspaceService(token)
+    ws = get_storage_service(token)
     model_obj = _fetch_model_obj(ws, model_ref, token)
     cobra_model = workspace_model_to_cobra(model_obj)
 

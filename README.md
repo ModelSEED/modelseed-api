@@ -67,6 +67,23 @@ Run the server:
 cd src && python -m uvicorn modelseed_api.main:app --host 0.0.0.0 --port 8000
 ```
 
+### 2c. Local mode (no PATRIC account needed)
+
+To run without PATRIC Workspace, use the local storage backend. Models are stored as JSON files on disk instead of in the PATRIC workspace.
+
+```bash
+cd modelseed-api
+cat > .env << EOF
+MODELSEED_STORAGE_BACKEND=local
+MODELSEED_LOCAL_DATA_DIR=~/.modelseed/data
+MODELSEED_MODELSEED_DB_PATH=$(realpath ../ModelSEEDDatabase)
+MODELSEED_TEMPLATES_PATH=$(realpath ../ModelSEEDTemplates/templates/v7.0)
+MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH=$(realpath ../cb_annotation_ontology_api)
+EOF
+```
+
+In local mode, no authentication is required. The API accepts requests without a token. Public media formulations are bundled in `data/media/public/`.
+
 ### 3. Open in browser
 
 | URL | Description |
@@ -89,7 +106,7 @@ The API is deployed on poplar via Docker:
 Source and data repos are at `/scratch/jplfaria/repos/`. To redeploy after code changes:
 
 ```bash
-cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml up --build -d
+cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml build --no-cache api && docker compose -f modelseed-api/docker-compose.yml up -d
 ```
 
 ### 4. Get a PATRIC token
@@ -102,7 +119,7 @@ cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml
 
 ## API Endpoints
 
-Most endpoints require a PATRIC token in the `Authorization` header. Biochemistry endpoints are public.
+Most endpoints require a PATRIC token in the `Authorization` header (not needed in local mode). Biochemistry endpoints are always public.
 
 ### Health (`/api`)
 
@@ -177,7 +194,14 @@ Browser (Demo dashboard or future Next.js frontend)
     v
 FastAPI REST API (this repo, port 8000)
     |
-    +-- /api/workspace/*  --> PATRIC Workspace (p3.theseed.org)
+    +-- /api/models/*     --+
+    +-- /api/workspace/*  --+--> Storage Factory
+    +-- /api/media/*      --+        |
+    |                           +----+----+
+    |                           |         |
+    |                       workspace   local
+    |                      (PATRIC WS) (filesystem)
+    |
     +-- /api/biochem/*    --> Local ModelSEEDDatabase files
     +-- /api/jobs/*       --> Job dispatch (subprocess or Celery)
     |
@@ -191,7 +215,8 @@ Job Scripts (src/job_scripts/)
 Key design decisions:
 
 - **Synchronous API** -- long-running operations are dispatched to external job scripts, not handled in-process
-- **Workspace proxy** -- the API proxies all PATRIC workspace calls, shielding the frontend from future workspace changes
+- **Pluggable storage** -- a factory selects PATRIC Workspace (`storage_backend=workspace`) or local filesystem (`storage_backend=local`); both implement the same interface with identical 12-element metadata tuples
+- **Fully offline local mode** -- with `storage_backend=local`, no PATRIC account or network access is needed; models are stored as JSON files on disk, public media are bundled in `data/media/public/`
 - **Local templates** -- model templates are loaded from git repos on disk, not from KBase workspace
 - **No KBase dependency** -- runs entirely against BV-BRC/PATRIC APIs, no KBase connection needed
 
@@ -387,7 +412,7 @@ src/
   modelseed_api/              # FastAPI application (the API)
     main.py                   # App initialization, static file serving
     config.py                 # Settings (pydantic-settings, env vars)
-    auth/dependencies.py      # PATRIC/RAST token extraction
+    auth/dependencies.py      # PATRIC/RAST token extraction + local auth bypass
     routes/                   # API endpoint definitions
       models.py               #   /api/models/*
       jobs.py                 #   /api/jobs/*
@@ -396,7 +421,9 @@ src/
       workspace.py            #   /api/workspace/*
     schemas/                  # Pydantic request/response models
     services/                 # Business logic
-      workspace_service.py    #   PATRIC workspace proxy
+      storage_factory.py      #   Returns WorkspaceService or LocalStorageService
+      workspace_service.py    #   PATRIC workspace proxy (remote)
+      local_storage_service.py#   Filesystem storage backend (local)
       model_service.py        #   Model CRUD, gapfill management
       biochem_service.py      #   ModelSEEDDatabase queries
       export_service.py       #   SBML/CobraPy export
@@ -411,6 +438,8 @@ src/
     gapfill.py                # Model gapfilling via MSGapfill
     run_fba.py                # Flux balance analysis
     merge_models.py           # Model merging
+data/
+  media/public/               # Bundled public media formulations (523 files)
 tests/
   test_live_integration.py    # Integration tests against live workspace
 ```
@@ -425,10 +454,12 @@ All settings are loaded from environment variables with the `MODELSEED_` prefix,
 | `MODELSEED_HOST` | `0.0.0.0` | Server bind address |
 | `MODELSEED_PORT` | `8000` | Server port |
 | `MODELSEED_DEBUG` | `false` | Enable debug mode |
+| `MODELSEED_STORAGE_BACKEND` | `workspace` | Storage backend: `workspace` (PATRIC) or `local` (filesystem) |
+| `MODELSEED_LOCAL_DATA_DIR` | `~/.modelseed/data` | Local storage directory (only used when `storage_backend=local`) |
 | `MODELSEED_MODELSEED_DB_PATH` | (required) | Path to ModelSEEDDatabase repo |
 | `MODELSEED_TEMPLATES_PATH` | (required) | Path to ModelSEEDTemplates/templates/v7.0 |
 | `MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH` | (required) | Path to cb_annotation_ontology_api repo |
-| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL |
+| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL (only used when `storage_backend=workspace`) |
 | `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
 | `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
 
