@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://bioseed_redis:6379/10"
     use_celery: bool = False  # Set True in production to use bioseed scheduler
 
+    # RAST legacy database (optional — leave empty to disable /api/rast endpoints)
+    rast_db_host: str = ""
+    rast_db_port: int = 3306
+    rast_db_user: str = ""
+    rast_db_password: str = ""
+    rast_db_name: str = "RastProdJobCache"
+
     # Timeouts
     workspace_timeout: int = 1800  # 30 minutes (matching existing client)
 

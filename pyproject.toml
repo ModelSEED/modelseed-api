@@ -28,6 +28,7 @@ modeling = [
     "modelseedpy>=0.4.0",
     "cobra>=0.29.0",
     "cobrakbase",
+    "pymysql>=1.1.0",
 ]
 dev = [
     "pytest>=7.0.0",

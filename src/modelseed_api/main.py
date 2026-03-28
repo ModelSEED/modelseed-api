@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from modelseed_api.config import settings
-from modelseed_api.routes import biochem, jobs, media, models, workspace
+from modelseed_api.routes import biochem, jobs, media, models, rast, workspace
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("modelseed_api")
@@ -89,6 +89,7 @@ app.include_router(workspace.router, prefix="/api/workspace", tags=["Workspace"]
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(media.router, prefix="/api/media", tags=["Media"])
 app.include_router(biochem.router, prefix="/api/biochem", tags=["Biochemistry"])
+app.include_router(rast.router, prefix="/api/rast", tags=["RAST"])
 
 
 @app.exception_handler(Exception)

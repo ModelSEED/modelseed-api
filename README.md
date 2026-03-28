@@ -162,6 +162,12 @@ Most endpoints require a PATRIC token in the `Authorization` header (not needed 
 | `GET` | `/api/biochem/compounds?ids=` | Get compounds by comma-separated IDs |
 | `GET` | `/api/biochem/search?query=&type=` | Search compounds or reactions by name/ID (type: `compounds` or `reactions`, limit up to 200) |
 
+### RAST (`/api/rast`) — 1 endpoint
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/rast/jobs` | List user's legacy RAST annotation jobs (requires RAST DB config, returns 503 if not configured) |
+
 ### Media (`/api/media`) — 3 endpoints
 
 | Method | Path | Description |
@@ -460,6 +466,10 @@ All settings are loaded from environment variables with the `MODELSEED_` prefix,
 | `MODELSEED_TEMPLATES_PATH` | (required) | Path to ModelSEEDTemplates/templates/v7.0 |
 | `MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH` | (required) | Path to cb_annotation_ontology_api repo |
 | `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL (only used when `storage_backend=workspace`) |
+| `MODELSEED_RAST_DB_HOST` | (empty = disabled) | RAST MySQL database host (e.g. `arborvitae.cels.anl.gov`) |
+| `MODELSEED_RAST_DB_USER` | (empty) | RAST database username |
+| `MODELSEED_RAST_DB_PASSWORD` | (empty) | RAST database password |
+| `MODELSEED_RAST_DB_NAME` | `RastProdJobCache` | RAST database name |
 | `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
 | `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
 
