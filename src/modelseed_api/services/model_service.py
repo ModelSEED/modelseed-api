@@ -28,6 +28,24 @@ def _safe_int(val, default=0):
         return default
 
 
+def _build_equation(reagents: list[dict], cpd_names: dict[str, str], direction: str) -> str:
+    """Synthesize a human-readable equation string from modelReactionReagents."""
+    lhs = []
+    rhs = []
+    for r in reagents:
+        coeff = r.get("coefficient", 0)
+        cpd_id = r.get("modelcompound_ref", "").split("/")[-1]
+        name = cpd_names.get(cpd_id, cpd_id)
+        abs_coeff = abs(coeff)
+        term = f"({abs_coeff}) {name}" if abs_coeff != 1 else name
+        if coeff < 0:
+            lhs.append(term)
+        elif coeff > 0:
+            rhs.append(term)
+    arrow = {"<": "<=", ">": "=>", "=": "<=>"}.get(direction, "<=>")
+    return f"{' + '.join(lhs)} {arrow} {' + '.join(rhs)}"
+
+
 class ModelService:
     """Service for model-related workspace operations.
 
@@ -76,6 +94,11 @@ class ModelService:
                     continue
                 # Skip entries with empty path (corrupt/legacy workspace data)
                 if not obj_meta[2]:
+                    continue
+                # Deduplicate: workspace can return the same object as both
+                # "modelfolder" and "folder" type — keep first occurrence by ref
+                model_ref = obj_meta[2] + obj_meta[0]
+                if any(m["ref"] == model_ref for m in models):
                     continue
                 models.append(
                     {
@@ -182,6 +205,8 @@ class ModelService:
                 formatted["taxonomy"] = user_meta.get("taxonomy")
                 formatted["domain"] = user_meta.get("domain")
                 formatted["type"] = user_meta.get("type")
+                formatted["source"] = user_meta.get("source")
+                formatted["genome_ref"] = user_meta.get("genome_ref")
 
                 # Auto-repair: update folder metadata if it's missing stats
                 if not user_meta.get("num_reactions"):
@@ -221,6 +246,11 @@ class ModelService:
 
     def _format_model_data(self, ref: str, model_obj: dict) -> dict:
         """Format raw model object into ModelData shape."""
+        # Build compound ID→name lookup for equation synthesis and biomass
+        cpd_name_map: dict[str, str] = {}
+        for cpd in model_obj.get("modelcompounds", []):
+            cpd_name_map[cpd.get("id", "")] = cpd.get("name", cpd.get("id", ""))
+
         reactions = []
         for rxn in model_obj.get("modelreactions", []):
             reagents = rxn.get("modelReactionReagents", [])
@@ -235,15 +265,29 @@ class ModelService:
                         r.get("name", ""),
                     ]
                 )
-            # Extract gene IDs from nested protein/subunit/feature_refs structure
+
+            # Synthesize equation string from reagents
+            equation = _build_equation(reagents, cpd_name_map, rxn.get("direction", "="))
+
+            # Build GPR string from nested protein/subunit/feature_refs
             rxn_genes = []
+            gpr_parts = []
             for prot in rxn.get("modelReactionProteins", []):
+                subunit_parts = []
                 for subunit in prot.get("modelReactionProteinSubunits", []):
+                    gene_ids = []
                     for fref in subunit.get("feature_refs", []):
-                        # feature_ref looks like ".../genome||/features/id/fig|..."
                         gene_id = fref.split("/")[-1] if "/" in fref else fref
                         if gene_id:
                             rxn_genes.append(gene_id)
+                            gene_ids.append(gene_id)
+                    if gene_ids:
+                        subunit_parts.append(" or ".join(gene_ids) if len(gene_ids) > 1 else gene_ids[0])
+                if subunit_parts:
+                    gpr_parts.append(
+                        "(" + " and ".join(subunit_parts) + ")" if len(subunit_parts) > 1 else subunit_parts[0]
+                    )
+            gpr = " or ".join(gpr_parts) if len(gpr_parts) > 1 else (gpr_parts[0] if gpr_parts else "")
 
             reactions.append(
                 {
@@ -251,7 +295,8 @@ class ModelService:
                     "name": rxn.get("name", ""),
                     "stoichiometry": stoich,
                     "direction": rxn.get("direction", "="),
-                    "gpr": rxn.get("gpr", ""),
+                    "equation": equation,
+                    "gpr": gpr,
                     "genes": rxn_genes,
                 }
             )
@@ -295,11 +340,13 @@ class ModelService:
         for bio in model_obj.get("biomasses", []):
             bio_cpds = []
             for bc in bio.get("biomasscompounds", []):
+                cpd_id = bc.get("modelcompound_ref", "").split("/")[-1]
                 bio_cpds.append(
                     [
-                        bc.get("modelcompound_ref", "").split("/")[-1],
+                        cpd_id,
                         bc.get("coefficient", 0),
                         bc.get("compartment", ""),
+                        cpd_name_map.get(cpd_id, cpd_id),
                     ]
                 )
             biomasses.append(

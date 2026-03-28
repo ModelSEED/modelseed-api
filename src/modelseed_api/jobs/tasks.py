@@ -457,8 +457,8 @@ def run_fba(
                 "fba_count": str(fba_idx + 1),
             }]],
         })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to update fba_count metadata for %s: %s", model_ref, e)
 
     return {
         "status": "success",
