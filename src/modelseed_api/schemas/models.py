@@ -32,7 +32,7 @@ class GapfillData(BaseModel):
 
 
 class FBAData(BaseModel):
-    """Data for an FBA study result."""
+    """Data for an FBA study result (summary — no flux values)."""
 
     rundate: str
     id: str
@@ -40,6 +40,18 @@ class FBAData(BaseModel):
     objective: float
     media_ref: str
     objective_function: str
+
+
+class FBADetail(BaseModel):
+    """Full FBA result including flux data."""
+
+    id: str
+    model_ref: str
+    media_ref: str
+    objectiveValue: float
+    status: str
+    rundate: str
+    fluxes: dict[str, float]
 
 
 class ModelStats(BaseModel):

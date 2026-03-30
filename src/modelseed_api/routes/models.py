@@ -179,6 +179,27 @@ async def list_fba_studies(
         raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
 
 
+@router.get("/fba/data")
+async def get_fba_detail(
+    ref: str = Query(..., description="Workspace reference to the model folder"),
+    fba_id: str = Query(..., description="FBA result ID, e.g. 'fba.0'"),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Get full FBA result including flux data.
+
+    The /fba endpoint returns only summaries (objective, media, date).
+    This endpoint fetches the actual FBA workspace object with reaction flux values.
+    """
+    ref = unquote(ref)
+    svc = _get_svc(user)
+    try:
+        return svc.get_fba_detail(ref, fba_id)
+    except WorkspaceError as e:
+        raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.get("/edits")
 async def list_model_edits(
     ref: str = Query(..., description="Workspace reference to the model"),

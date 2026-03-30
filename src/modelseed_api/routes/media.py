@@ -5,7 +5,7 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from modelseed_api.auth.dependencies import AuthUser, get_current_user
+from modelseed_api.auth.dependencies import AuthUser, get_current_user, get_optional_user
 from modelseed_api.config import settings
 from modelseed_api.services.storage_factory import get_storage_service
 from modelseed_api.services.workspace_service import WorkspaceError
@@ -24,13 +24,15 @@ def _ws_status(e: WorkspaceError) -> int:
 
 @router.get("/public")
 async def list_public_media(
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser | None = Depends(get_optional_user),
 ) -> Any:
     """List public media from the shared media path.
 
     Media are listed from /chenry/public/modelsupport/media.
+    No authentication required — public media is world-readable.
     """
-    ws = get_storage_service(user.token)
+    token = user.token if user else ""
+    ws = get_storage_service(token)
     try:
         return ws.ls({"paths": [settings.public_media_path]})
     except WorkspaceError as e:

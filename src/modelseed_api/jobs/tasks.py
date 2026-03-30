@@ -119,17 +119,26 @@ def _load_media(media_ref: str, token: str):
 def reconstruct(
     self,
     token: str,
-    genome_id: str,
+    genome: str = "",
     template_type: str = "gn",
     atp_safe: bool = True,
     gapfill: bool = False,
-    media_ref: str | None = None,
+    media: str | None = None,
     output_path: str | None = None,
+    # Legacy aliases
+    genome_id: str = "",
+    media_ref: str | None = None,
 ):
     """Build a metabolic model from a BV-BRC genome.
 
     Mirrors src/job_scripts/reconstruct.py for full parity.
     """
+    # Resolve parameter aliases
+    genome_id = genome or genome_id
+    media_ref = media or media_ref
+    if not genome_id:
+        raise ValueError("genome (or genome_id) is required")
+
     from kbutillib import BVBRCUtils, MSReconstructionUtils
 
     kwargs = _init_kwargs(token)
@@ -272,14 +281,24 @@ def reconstruct(
 def gapfill(
     self,
     token: str,
-    model_ref: str,
-    media_ref: str | None = None,
+    model: str = "",
+    media: str | None = None,
     template_type: str = "gn",
+    # Legacy aliases (kept for in-flight tasks during deploy)
+    model_ref: str = "",
+    media_ref: str | None = None,
 ):
     """Run gapfilling on a model.
 
     Mirrors src/job_scripts/gapfill.py for full parity.
     """
+    # Resolve parameter aliases (dispatcher sends 'model'/'media',
+    # legacy callers may send 'model_ref'/'media_ref')
+    model_ref = model or model_ref
+    media_ref = media or media_ref
+    if not model_ref:
+        raise ValueError("model (or model_ref) is required")
+
     _init_kwargs(token)  # sets KB_AUTH_TOKEN
 
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
@@ -367,13 +386,22 @@ def gapfill(
 def run_fba(
     self,
     token: str,
-    model_ref: str,
+    model: str = "",
+    media: str | None = None,
+    # Legacy aliases
+    model_ref: str = "",
     media_ref: str | None = None,
 ):
     """Run flux balance analysis on a model.
 
     Mirrors src/job_scripts/run_fba.py for full parity.
     """
+    # Resolve parameter aliases
+    model_ref = model or model_ref
+    media_ref = media or media_ref
+    if not model_ref:
+        raise ValueError("model (or model_ref) is required")
+
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
 
     from modelseed_api.services.storage_factory import get_storage_service

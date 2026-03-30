@@ -208,9 +208,9 @@ class ModelService:
                 formatted["source"] = user_meta.get("source")
                 formatted["genome_ref"] = user_meta.get("genome_ref")
 
-                # Auto-repair: update folder metadata if it's missing stats
-                if not user_meta.get("num_reactions"):
-                    self._repair_folder_metadata(model_ref, formatted)
+                # Auto-repair: update folder metadata if it's missing stats or organism
+                if not user_meta.get("num_reactions") or not user_meta.get("organism_name"):
+                    self._repair_folder_metadata(model_ref, formatted, model_obj)
         except Exception:
             pass  # non-critical, don't block model view
 
@@ -228,8 +228,10 @@ class ModelService:
                 return entry[7] if isinstance(entry[7], dict) else {}
         return None
 
-    def _repair_folder_metadata(self, model_ref: str, formatted: dict):
-        """Update the modelfolder metadata with model stats if missing."""
+    def _repair_folder_metadata(
+        self, model_ref: str, formatted: dict, model_obj: dict | None = None
+    ):
+        """Update the modelfolder metadata with model stats and organism info if missing."""
         folder_name = model_ref.rstrip("/").split("/")[-1]
         meta = {
             "num_reactions": str(len(formatted.get("reactions", []))),
@@ -240,6 +242,19 @@ class ModelService:
             "name": folder_name,
             "source": "ModelSEED",
         }
+
+        # Also repair organism info from the model object if missing
+        if model_obj and (not formatted.get("organism_name") or not formatted.get("genome_ref")):
+            genome_ref = model_obj.get("genome_ref", "")
+            if genome_ref and not formatted.get("genome_ref"):
+                meta["genome_ref"] = genome_ref
+                formatted["genome_ref"] = genome_ref
+            if genome_ref and not formatted.get("organism_name"):
+                # Extract organism name from genome_ref path (last segment)
+                genome_name = genome_ref.rstrip("/").split("/")[-1]
+                meta["organism_name"] = genome_name
+                formatted["organism_name"] = genome_name
+
         self.ws.update_metadata({
             "objects": [[model_ref, meta]],
         })
@@ -1139,3 +1154,51 @@ class ModelService:
             )
 
         return fbas
+
+    def get_fba_detail(self, model_ref: str, fba_id: str) -> dict:
+        """Fetch full FBA result including flux data.
+
+        The actual FBA object (with fluxes) is stored as a separate workspace
+        object at {model_ref}/{fba_id}, while the model's fba_studies array
+        only contains summary metadata (no fluxes).
+        """
+        fba_path = f"{model_ref}/{fba_id}"
+        result = self.ws.get({"objects": [fba_path]})
+        fba_obj = self._parse_ws_data(result)
+
+        fluxes = fba_obj.get("fluxes", {})
+
+        # For old PATRIC models, flux data may be in a separate .fluxtbl file
+        if not fluxes:
+            try:
+                tbl_result = self.ws.get({"objects": [f"{fba_path}.fluxtbl"]})
+                tbl_data = tbl_result[0][1]  # raw string
+                fluxes = self._parse_fluxtbl(tbl_data)
+            except Exception:
+                pass  # .fluxtbl may not exist
+
+        return {
+            "id": fba_obj.get("id", fba_id),
+            "model_ref": fba_obj.get("model_ref", model_ref),
+            "media_ref": fba_obj.get("media_ref", ""),
+            "objectiveValue": float(fba_obj.get("objectiveValue", 0.0)),
+            "status": fba_obj.get("status", ""),
+            "rundate": fba_obj.get("rundate", ""),
+            "fluxes": {k: float(v) for k, v in fluxes.items()},
+        }
+
+    @staticmethod
+    def _parse_fluxtbl(tbl_data: str) -> dict[str, float]:
+        """Parse a tab-delimited flux table (legacy PATRIC format).
+
+        Format: reaction_id<TAB>flux_value per line, with optional header.
+        """
+        fluxes: dict[str, float] = {}
+        for line in tbl_data.strip().splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                try:
+                    fluxes[parts[0]] = float(parts[1])
+                except ValueError:
+                    continue  # skip header or malformed lines
+        return fluxes
