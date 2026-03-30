@@ -138,6 +138,9 @@ def reconstruct(
     media_ref = media or media_ref
     if not genome_id:
         raise ValueError("genome (or genome_id) is required")
+    # Strip source prefix if frontend sends "PATRIC:469009.4" or "RAST:12345"
+    if ":" in genome_id:
+        genome_id = genome_id.split(":", 1)[1]
 
     from kbutillib import BVBRCUtils, MSReconstructionUtils
 
@@ -319,8 +322,10 @@ def gapfill(
     template = _load_template(template_type)
 
     # Load media if specified
+    # "Complete" means all exchanges open (no media restriction) —
+    # pass None to MSGapfill. Only fetch from workspace if it's a real path.
     ms_media = None
-    if media_ref:
+    if media_ref and media_ref.lower() != "complete" and "/" in media_ref:
         self.update_state(state="PROGRESS", meta={"status": "Loading media..."})
         ms_media = _load_media(media_ref, token)
 

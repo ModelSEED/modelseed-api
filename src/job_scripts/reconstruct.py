@@ -48,6 +48,9 @@ def main():
 
     params = json.loads(args.params)
     genome_id = params.get("genome", "")
+    # Strip source prefix if frontend sends "PATRIC:469009.4" or "RAST:12345"
+    if ":" in genome_id:
+        genome_id = genome_id.split(":", 1)[1]
     template_type = params.get("template_type", "gn")
     atp_safe = params.get("atp_safe", True)
     do_gapfill = params.get("gapfill", False)
