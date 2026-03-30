@@ -311,19 +311,23 @@ class LocalStorageService:
             else:
                 shutil.copy2(src_fs, dst_fs)
 
-            # Copy metadata too
-            src_meta_dir = src_fs.parent / ".meta"
-            dst_meta_dir = dst_fs.parent / ".meta"
-            if src_fs.is_dir() and recursive and src_meta_dir.exists():
-                if dst_meta_dir.exists():
-                    shutil.rmtree(dst_meta_dir)
-                shutil.copytree(src_meta_dir, dst_meta_dir)
-            else:
-                src_meta_file = self._meta_path(src_fs)
-                if src_meta_file.exists():
-                    dst_meta_file = self._meta_path(dst_fs)
-                    dst_meta_file.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_meta_file, dst_meta_file)
+            # Copy the source's own metadata entry and update name/path
+            src_meta_file = self._meta_path(src_fs)
+            if src_meta_file.exists():
+                dst_meta_file = self._meta_path(dst_fs)
+                dst_meta_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_meta_file, dst_meta_file)
+                # Update name and path to reflect destination
+                meta = self._read_meta(dst_fs)
+                dst_name = dst_fs.name
+                meta[_NAME] = dst_name
+                meta[_PATH] = self._fs_to_ws_path(dst_fs)
+                meta[_ID] = dst_name
+                if isinstance(meta[_USER_META], dict):
+                    meta[_USER_META]["id"] = dst_name
+                    if "name" in meta[_USER_META]:
+                        meta[_USER_META]["name"] = dst_name
+                self._write_meta(dst_fs, meta)
 
             meta = self._read_meta(dst_fs)
             results.append(meta)
