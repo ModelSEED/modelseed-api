@@ -138,6 +138,15 @@ def main():
         # Step 5: Run gapfilling
         update_job(job_file, {"progress": "Running gapfilling..."})
         from modelseedpy import MSGapfill
+        from modelseedpy.core.msmedia import MSMedia
+
+        # WORKAROUND: MSGapfill.test_gapfill_database() crashes with
+        # "'NoneType' object has no attribute 'id'" when media=None and
+        # gapfilling fails to find a solution. Pass an empty MSMedia
+        # object instead of None — this is semantically identical
+        # (all exchanges open) but gives the error path a .id to reference.
+        if ms_media is None:
+            ms_media = MSMedia("Complete", "Complete")
 
         gapfiller = MSGapfill(
             fba_model,

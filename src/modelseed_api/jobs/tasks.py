@@ -189,11 +189,17 @@ def reconstruct(
     if gapfill:
         self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
         from modelseedpy import MSGapfill
+        from modelseedpy.core.msmedia import MSMedia
 
         # Load media from workspace if specified
+        # "Complete" means all exchanges open — skip workspace fetch
         ms_media = None
-        if media_ref:
+        if media_ref and media_ref.lower() != "complete" and "/" in media_ref:
             ms_media = _load_media(media_ref, token)
+
+        # WORKAROUND: MSGapfill crashes on media=None in error path
+        if ms_media is None:
+            ms_media = MSMedia("Complete", "Complete")
 
         gapfiller = MSGapfill(
             mdlutl.model,
@@ -332,6 +338,13 @@ def gapfill(
     # Run gapfilling
     self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
     from modelseedpy import MSGapfill
+    from modelseedpy.core.msmedia import MSMedia
+
+    # WORKAROUND: MSGapfill.test_gapfill_database() crashes on media=None
+    # when gapfilling fails. Pass empty MSMedia instead (semantically identical).
+    if ms_media is None:
+        ms_media = MSMedia("Complete", "Complete")
+
     gapfiller = MSGapfill(
         fba_model,
         default_target="bio1",

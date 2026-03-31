@@ -151,6 +151,12 @@ def main():
 
             update_job(job_file, {"progress": "Running gapfilling..."})
             from modelseedpy import MSGapfill
+            from modelseedpy.core.msmedia import MSMedia
+
+            # WORKAROUND: MSGapfill crashes on media=None in error path
+            if ms_media is None:
+                ms_media = MSMedia("Complete", "Complete")
+
             gapfiller = MSGapfill(
                 mdlutl.model,
                 default_target="bio1",

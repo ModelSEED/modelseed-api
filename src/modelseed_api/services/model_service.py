@@ -208,8 +208,20 @@ class ModelService:
                 formatted["source"] = user_meta.get("source")
                 formatted["genome_ref"] = user_meta.get("genome_ref")
 
-                # Auto-repair: update folder metadata if it's missing stats or organism
-                if not user_meta.get("num_reactions") or not user_meta.get("organism_name"):
+                # Auto-repair: update folder metadata if stats, organism, or
+                # fba/gapfill counts are missing or stale
+                actual_fba = len(
+                    model_obj.get("fbaFormulations", [])
+                    + model_obj.get("fba_studies", [])
+                )
+                actual_gf = len(model_obj.get("gapfillings", []))
+                needs_repair = (
+                    not user_meta.get("num_reactions")
+                    or not user_meta.get("organism_name")
+                    or _safe_int(user_meta.get("fba_count", 0)) != actual_fba
+                    or _safe_int(user_meta.get("integrated_gapfills", 0)) != actual_gf
+                )
+                if needs_repair:
                     self._repair_folder_metadata(model_ref, formatted, model_obj)
         except Exception:
             pass  # non-critical, don't block model view
@@ -231,7 +243,8 @@ class ModelService:
     def _repair_folder_metadata(
         self, model_ref: str, formatted: dict, model_obj: dict | None = None
     ):
-        """Update the modelfolder metadata with model stats and organism info if missing."""
+        """Update the modelfolder metadata with model stats, organism info,
+        and fba/gapfill counts from the actual model data."""
         folder_name = model_ref.rstrip("/").split("/")[-1]
         meta = {
             "num_reactions": str(len(formatted.get("reactions", []))),
@@ -243,6 +256,16 @@ class ModelService:
             "source": "ModelSEED",
         }
 
+        # Compute fba_count and integrated_gapfills from the model object
+        if model_obj:
+            fba_count = len(
+                model_obj.get("fbaFormulations", [])
+                + model_obj.get("fba_studies", [])
+            )
+            gf_count = len(model_obj.get("gapfillings", []))
+            meta["fba_count"] = str(fba_count)
+            meta["integrated_gapfills"] = str(gf_count)
+
         # Also repair organism info from the model object if missing
         if model_obj and (not formatted.get("organism_name") or not formatted.get("genome_ref")):
             genome_ref = model_obj.get("genome_ref", "")
@@ -250,7 +273,6 @@ class ModelService:
                 meta["genome_ref"] = genome_ref
                 formatted["genome_ref"] = genome_ref
             if genome_ref and not formatted.get("organism_name"):
-                # Extract organism name from genome_ref path (last segment)
                 genome_name = genome_ref.rstrip("/").split("/")[-1]
                 meta["organism_name"] = genome_name
                 formatted["organism_name"] = genome_name
