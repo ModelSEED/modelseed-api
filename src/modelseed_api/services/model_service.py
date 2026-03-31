@@ -146,11 +146,12 @@ class ModelService:
         The workspace returns [[meta_tuple, data], ...]. data is either:
         - Inline JSON string (small objects)
         - A Shock URL (large objects stored in file storage)
+        - None/empty when data is in Shock (URL available in metadata[11])
         """
         if not result or len(result) == 0:
             return {}
 
-        raw_data = result[0][1] if len(result[0]) > 1 else "{}"
+        raw_data = result[0][1] if len(result[0]) > 1 else None
 
         if isinstance(raw_data, dict):
             return raw_data
@@ -160,6 +161,15 @@ class ModelService:
             if raw_data.startswith("http") and "shock" in raw_data:
                 return self._fetch_from_shock(raw_data)
             return json.loads(raw_data)
+
+        # Fallback: data field is None/empty — check metadata for Shock URL.
+        # PATRIC workspace stores large objects in Shock and may return the
+        # data field as null while placing the Shock URL in metadata[11].
+        meta = result[0][0] if result[0] else None
+        if meta and len(meta) > 11 and meta[11]:
+            shock_url = str(meta[11])
+            if shock_url.startswith("http"):
+                return self._fetch_from_shock(shock_url)
 
         return {}
 
@@ -272,10 +282,27 @@ class ModelService:
             if genome_ref and not formatted.get("genome_ref"):
                 meta["genome_ref"] = genome_ref
                 formatted["genome_ref"] = genome_ref
-            if genome_ref and not formatted.get("organism_name"):
-                genome_name = genome_ref.rstrip("/").split("/")[-1]
-                meta["organism_name"] = genome_name
-                formatted["organism_name"] = genome_name
+            if not formatted.get("organism_name"):
+                # Try model name first (usually set to scientific_name during build)
+                model_name = model_obj.get("name", "")
+                if model_name:
+                    meta["organism_name"] = model_name
+                    formatted["organism_name"] = model_name
+                elif genome_ref:
+                    # Extract genome ID from genome_ref, stripping workspace
+                    # type suffixes like "genome||" that old ProbModelSEED adds
+                    parts = genome_ref.rstrip("/").split("/")
+                    # Walk backwards to find a part that looks like a genome ID
+                    # (contains a dot + digits), skip "genome||" etc.
+                    genome_name = None
+                    for part in reversed(parts):
+                        clean = part.split("|")[0]  # strip || suffix
+                        if clean and clean != "genome" and clean != ".":
+                            genome_name = clean
+                            break
+                    if genome_name:
+                        meta["organism_name"] = genome_name
+                        formatted["organism_name"] = genome_name
 
         self.ws.update_metadata({
             "objects": [[model_ref, meta]],
