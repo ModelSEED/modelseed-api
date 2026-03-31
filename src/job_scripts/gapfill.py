@@ -108,10 +108,17 @@ def main():
             template = MSTemplateBuilder.from_dict(json.load(f)).build()
 
         # Step 4: Load media if specified
-        # "Complete" means all exchanges open (no media restriction) —
-        # pass None to MSGapfill. Only fetch from workspace if it's a real path.
+        # Resolve bare media names to workspace paths under the public folder.
+        def _resolve_media(ref):
+            if not ref or ref.lower() == "complete":
+                return None
+            if "/" in ref:
+                return ref
+            return f"{settings.public_media_path}/{ref}"
+
         ms_media = None
-        if media_ref and media_ref.lower() != "complete" and "/" in media_ref:
+        ws_media_path = _resolve_media(media_ref)
+        if ws_media_path:
             update_job(job_file, {"progress": "Loading media..."})
             from kbutillib import PatricWSUtils
             ws_utils = PatricWSUtils(
@@ -126,7 +133,7 @@ def main():
             import time
             for _attempt in range(3):
                 try:
-                    ms_media = ws_utils.get_media(media_ref, as_msmedia=True)
+                    ms_media = ws_utils.get_media(ws_media_path, as_msmedia=True)
                     break
                 except Exception as _e:
                     if _attempt < 2 and "500" in str(_e):

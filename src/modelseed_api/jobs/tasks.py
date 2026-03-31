@@ -226,10 +226,10 @@ def reconstruct(
         from modelseedpy.core.msmedia import MSMedia
 
         # Load media from workspace if specified
-        # "Complete" means all exchanges open — skip workspace fetch
         ms_media = None
-        if media_ref and media_ref.lower() != "complete" and "/" in media_ref:
-            ms_media = _load_media(media_ref, token)
+        ws_media_path = _resolve_media_ref(media_ref)
+        if ws_media_path:
+            ms_media = _load_media(ws_media_path, token)
 
         # WORKAROUND: MSGapfill crashes on media=None in error path
         if ms_media is None:
@@ -370,12 +370,12 @@ def gapfill(
     template = _load_template(template_type)
 
     # Load media if specified
-    # "Complete" means all exchanges open (no media restriction) —
-    # pass None to MSGapfill. Only fetch from workspace if it's a real path.
+    # "Complete" means all exchanges open — pass empty MSMedia to MSGapfill.
     ms_media = None
-    if media_ref and media_ref.lower() != "complete" and "/" in media_ref:
+    ws_media_path = _resolve_media_ref(media_ref)
+    if ws_media_path:
         self.update_state(state="PROGRESS", meta={"status": "Loading media..."})
-        ms_media = _load_media(media_ref, token)
+        ms_media = _load_media(ws_media_path, token)
 
     # Run gapfilling
     self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
