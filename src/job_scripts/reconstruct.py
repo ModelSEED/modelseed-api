@@ -185,6 +185,12 @@ def main():
             from modelseed_api.services.storage_factory import get_storage_service
             ws = get_storage_service(args.token)
 
+            # Save cobra JSON BEFORE CobraModelConverter (which loses exchange
+            # bounds and breaks FBA). cobra.io roundtrip is lossless.
+            import cobra.io
+            mdlutl.model.objective = "bio1"
+            cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
+
             # Serialize to workspace format (modelreactions, modelcompounds, etc.)
             # mdlutl.model is an FBAModel (from cobrakbase) — get_data() returns
             # workspace-format dict with modelreactions, modelcompounds, etc.
@@ -224,11 +230,12 @@ def main():
                 "fba_count": "0",
             }
 
-            # Create modelfolder + model data in one call
+            # Create modelfolder + model data + cobra JSON in one call
             ws.create({
                 "objects": [
                     [output_path, "modelfolder", folder_meta, ""],
                     [f"{output_path}/model", "model", {}, model_data],
+                    [f"{output_path}/cobra_model", "string", {}, cobra_json],
                 ],
                 "overwrite": 1,
             })

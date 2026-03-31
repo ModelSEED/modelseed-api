@@ -177,14 +177,17 @@ def main():
             # Persist gapfilling solution data to model object
             mdlutl.create_kb_gapfilling_data(ws_data)
 
+            # Save cobra JSON for FBA (workspace format loses exchange bounds)
+            import cobra.io
+            fba_model.objective = "bio1"
+            cobra_json = json.dumps(cobra.io.model_to_dict(fba_model))
+
             model_data = json.dumps(ws_data)
             ws.create({
-                "objects": [[
-                    f"{model_ref}/model",
-                    "model",
-                    {},
-                    model_data,
-                ]],
+                "objects": [
+                    [f"{model_ref}/model", "model", {}, model_data],
+                    [f"{model_ref}/cobra_model", "string", {}, cobra_json],
+                ],
                 "overwrite": 1,
             })
 

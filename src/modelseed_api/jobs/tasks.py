@@ -224,6 +224,12 @@ def reconstruct(
         from modelseed_api.services.storage_factory import get_storage_service
         ws = get_storage_service(token)
 
+        # Save cobra JSON BEFORE CobraModelConverter (which loses exchange
+        # bounds and breaks FBA). cobra.io roundtrip is lossless.
+        import cobra.io
+        mdlutl.model.objective = "bio1"
+        cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
+
         if not hasattr(mdlutl.model, 'get_data'):
             from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
             mdlutl.model = CobraModelConverter(mdlutl.model).build()
@@ -261,6 +267,7 @@ def reconstruct(
             "objects": [
                 [output_path, "modelfolder", folder_meta, ""],
                 [f"{output_path}/model", "model", {}, model_data],
+                [f"{output_path}/cobra_model", "string", {}, cobra_json],
             ],
             "overwrite": 1,
         })
@@ -367,15 +374,18 @@ def gapfill(
         self.update_state(state="PROGRESS", meta={"status": "Saving model..."})
         ws_data = fba_model.get_data()
         mdlutl.create_kb_gapfilling_data(ws_data)
-        model_data = json.dumps(ws_data)
 
+        # Save cobra JSON for FBA (workspace format loses exchange bounds)
+        import cobra.io
+        fba_model.objective = "bio1"
+        cobra_json = json.dumps(cobra.io.model_to_dict(fba_model))
+
+        model_data = json.dumps(ws_data)
         ws.create({
-            "objects": [[
-                f"{model_ref}/model",
-                "model",
-                {},
-                model_data,
-            ]],
+            "objects": [
+                [f"{model_ref}/model", "model", {}, model_data],
+                [f"{model_ref}/cobra_model", "string", {}, cobra_json],
+            ],
             "overwrite": 1,
         })
 
@@ -423,11 +433,33 @@ def run_fba(
     self.update_state(state="PROGRESS", meta={"status": "Loading model..."})
 
     from modelseed_api.services.storage_factory import get_storage_service
-    from modelseed_api.services.export_service import workspace_model_to_cobra
 
     ws = get_storage_service(token)
-    model_obj = _fetch_model_obj(ws, model_ref, token)
-    cobra_model = workspace_model_to_cobra(model_obj)
+
+    # Prefer cobra_model (lossless cobra JSON) over workspace format.
+    # CobraModelConverter.get_data() loses exchange bounds, making FBA
+    # return 0 for all models. cobra.io roundtrip is lossless.
+    cobra_model = None
+    try:
+        cobra_result = ws.get({"objects": [f"{model_ref}/cobra_model"]})
+        if cobra_result and cobra_result[0]:
+            raw = cobra_result[0][1] if len(cobra_result[0]) > 1 else None
+            if raw and isinstance(raw, str) and not raw.startswith("http"):
+                import cobra.io
+                cobra_model = cobra.io.model_from_dict(json.loads(raw))
+                cobra_model.objective = "bio1"
+                logger.info("Loaded cobra_model from workspace for %s", model_ref)
+    except Exception:
+        pass  # cobra_model not available, fall back to workspace format
+
+    if cobra_model is None:
+        from modelseed_api.services.export_service import workspace_model_to_cobra
+        model_obj = _fetch_model_obj(ws, model_ref, token)
+        cobra_model = workspace_model_to_cobra(model_obj)
+        logger.info("Loaded model from workspace format (fallback) for %s", model_ref)
+    else:
+        # Still need model_obj for saving FBA study back to model
+        model_obj = _fetch_model_obj(ws, model_ref, token)
 
     # Run FBA
     self.update_state(state="PROGRESS", meta={"status": "Running FBA..."})

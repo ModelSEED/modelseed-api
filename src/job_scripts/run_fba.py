@@ -47,38 +47,57 @@ def main():
 
         # Fetch model from storage
         from modelseed_api.services.storage_factory import get_storage_service
-        from modelseed_api.services.export_service import workspace_model_to_cobra
 
         update_job(job_file, {"progress": "Loading model..."})
         ws = get_storage_service(args.token)
-        model_path = f"{model_ref}/model"
-        result = ws.get({"objects": [model_path]})
 
-        if not result or len(result) == 0:
-            raise ValueError(f"Model not found: {model_ref}")
+        # Prefer cobra_model (lossless cobra JSON) over workspace format.
+        # CobraModelConverter.get_data() loses exchange bounds, making FBA
+        # return 0 for all models. cobra.io roundtrip is lossless.
+        cobra_model = None
+        try:
+            cobra_result = ws.get({"objects": [f"{model_ref}/cobra_model"]})
+            if cobra_result and cobra_result[0]:
+                raw = cobra_result[0][1] if len(cobra_result[0]) > 1 else None
+                if raw and isinstance(raw, str) and not raw.startswith("http"):
+                    import cobra.io
+                    cobra_model = cobra.io.model_from_dict(json.loads(raw))
+                    cobra_model.objective = "bio1"
+                    print(f"Loaded cobra_model from workspace")
+        except Exception:
+            pass  # cobra_model not available, fall back to workspace format
 
-        # Parse model data (handle Shock URLs)
-        raw_data = result[0][1] if len(result[0]) > 1 else "{}"
-        if isinstance(raw_data, str):
-            if raw_data.startswith("http") and "shock" in raw_data:
-                import requests
-                download_url = raw_data.rstrip("/") + "?download"
-                resp = requests.get(
-                    download_url,
-                    headers={"Authorization": f"OAuth {args.token}"},
-                    timeout=60,
-                )
-                resp.raise_for_status()
-                model_obj = resp.json()
+        if cobra_model is None:
+            from modelseed_api.services.export_service import workspace_model_to_cobra
+
+            model_path = f"{model_ref}/model"
+            result = ws.get({"objects": [model_path]})
+
+            if not result or len(result) == 0:
+                raise ValueError(f"Model not found: {model_ref}")
+
+            # Parse model data (handle Shock URLs)
+            raw_data = result[0][1] if len(result[0]) > 1 else "{}"
+            if isinstance(raw_data, str):
+                if raw_data.startswith("http") and "shock" in raw_data:
+                    import requests
+                    download_url = raw_data.rstrip("/") + "?download"
+                    resp = requests.get(
+                        download_url,
+                        headers={"Authorization": f"OAuth {args.token}"},
+                        timeout=60,
+                    )
+                    resp.raise_for_status()
+                    model_obj = resp.json()
+                else:
+                    model_obj = json.loads(raw_data)
+            elif isinstance(raw_data, dict):
+                model_obj = raw_data
             else:
-                model_obj = json.loads(raw_data)
-        elif isinstance(raw_data, dict):
-            model_obj = raw_data
-        else:
-            model_obj = {}
+                model_obj = {}
 
-        # Convert to cobra model
-        cobra_model = workspace_model_to_cobra(model_obj)
+            cobra_model = workspace_model_to_cobra(model_obj)
+            print(f"Loaded model from workspace format (fallback)")
 
         # Run FBA
         update_job(job_file, {"progress": "Running FBA..."})
