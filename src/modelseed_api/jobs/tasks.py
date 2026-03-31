@@ -115,6 +115,40 @@ def _load_media(media_ref: str, token: str):
                 raise
 
 
+def _resolve_media_ref(media_ref: str) -> str | None:
+    """Resolve media reference to a workspace path.
+
+    Returns None for 'Complete' or empty (all exchanges open).
+    Bare names (no '/') are resolved under the public media folder.
+    """
+    if not media_ref or media_ref.lower() == "complete":
+        return None
+    if "/" in media_ref:
+        return media_ref  # Already a workspace path
+    # Bare name → look under public media folder
+    from modelseed_api.config import settings
+    return f"{settings.public_media_path}/{media_ref}"
+
+
+def _apply_media(cobra_model, ms_media):
+    """Apply MSMedia constraints to a cobra.Model.
+
+    Closes all exchange reactions then opens only those whose compounds
+    appear in the media, using cobra's native ``model.medium`` property.
+    """
+    rxn_ids = {r.id for r in cobra_model.reactions}
+    medium = {}
+    for cpd in ms_media.mediacompounds:
+        exc_rxn_id = f"EX_{cpd.id}_e0"
+        if exc_rxn_id in rxn_ids:
+            medium[exc_rxn_id] = cpd.maxFlux or 1000.0
+    if medium:
+        cobra_model.medium = medium
+        logger.info("Applied media: %d exchange reactions open", len(medium))
+    else:
+        logger.warning("Media had no matching exchange reactions — running with default bounds")
+
+
 @app.task(bind=True, name="modelseed.reconstruct")
 def reconstruct(
     self,
@@ -481,6 +515,14 @@ def run_fba(
     else:
         # Still need model_obj for saving FBA study back to model
         model_obj = _fetch_model_obj(ws, model_ref, token)
+
+    # Load and apply media constraints if specified
+    ws_media_path = _resolve_media_ref(media_ref)
+    if ws_media_path:
+        self.update_state(state="PROGRESS", meta={"status": "Loading media..."})
+        ms_media = _load_media(ws_media_path, token)
+        _apply_media(cobra_model, ms_media)
+        logger.info("Loaded media from %s for FBA on %s", ws_media_path, model_ref)
 
     # Run FBA
     self.update_state(state="PROGRESS", meta={"status": "Running FBA..."})

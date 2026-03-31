@@ -148,6 +148,35 @@ class ModelService:
                     }
                 )
 
+        # Repair taxonomy/domain for old models missing these fields.
+        # BV-BRC API lookups are fast (~100ms). After first repair the metadata
+        # is persisted in the workspace, so subsequent listings return instantly.
+        models_needing_repair = [
+            m for m in models
+            if (m.get("genome_ref") or m.get("id"))
+            and (not m.get("taxonomy") or not m.get("domain"))
+        ]
+        for m in models_needing_repair:
+            genome_id = self._extract_genome_id(m.get("genome_ref", ""))
+            if not genome_id:
+                genome_id = self._extract_genome_id(m.get("id", ""))
+            info = self._lookup_genome_info(genome_id)
+            if info:
+                if not m.get("taxonomy") and info.get("taxonomy"):
+                    m["taxonomy"] = info["taxonomy"]
+                if not m.get("domain") and info.get("domain"):
+                    m["domain"] = info["domain"]
+                if not m.get("organism_name") and info.get("organism_name"):
+                    m["organism_name"] = info["organism_name"]
+                try:
+                    self.ws.update_metadata({
+                        "objects": [[m["ref"], {
+                            k: v for k, v in info.items() if v
+                        }]],
+                    })
+                except Exception:
+                    pass  # Non-critical — next listing will retry
+
         return models
 
     def _parse_ws_data(self, result: list) -> dict:

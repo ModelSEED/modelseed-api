@@ -117,6 +117,47 @@ def main():
 
             print(f"Loaded model via FBAModelBuilder (fallback)")
 
+        # Load and apply media constraints if specified
+        def _resolve_media(ref):
+            if not ref or ref.lower() == "complete":
+                return None
+            if "/" in ref:
+                return ref
+            return f"/chenry/public/modelsupport/media/{ref}"
+
+        ws_media_path = _resolve_media(media_ref)
+        if ws_media_path:
+            update_job(job_file, {"progress": "Loading media..."})
+            import os, time
+            os.environ.setdefault("KB_AUTH_TOKEN", "unused")
+            from kbutillib import PatricWSUtils
+            ws_utils = PatricWSUtils(
+                config_file=False, token_file=None, kbase_token_file=None,
+                token={"patric": args.token, "kbase": "unused"},
+            )
+            ms_media = None
+            for attempt in range(3):
+                try:
+                    ms_media = ws_utils.get_media(ws_media_path, as_msmedia=True)
+                    break
+                except Exception as _me:
+                    if attempt < 2 and "500" in str(_me):
+                        time.sleep(2 * (attempt + 1))
+                    else:
+                        raise
+            if ms_media:
+                rxn_ids = {r.id for r in cobra_model.reactions}
+                medium = {}
+                for cpd in ms_media.mediacompounds:
+                    exc_rxn_id = f"EX_{cpd.id}_e0"
+                    if exc_rxn_id in rxn_ids:
+                        medium[exc_rxn_id] = cpd.maxFlux or 1000.0
+                if medium:
+                    cobra_model.medium = medium
+                    print(f"Applied media: {len(medium)} exchange reactions open")
+                else:
+                    print(f"Warning: media had no matching exchange reactions")
+
         # Run FBA
         update_job(job_file, {"progress": "Running FBA..."})
         solution = cobra_model.optimize()
