@@ -146,6 +146,34 @@ def main():
             "rundate": now(),
         }
 
+        # Build KBase-compatible FBAReactionVariables / FBACompoundVariables
+        # so Vibhav's frontend can parse flux data via parseReactionFluxes()
+        fba_rxn_vars = []
+        fba_cpd_vars = []
+        for rxn in cobra_model.reactions:
+            flux = solution.fluxes[rxn.id]
+            fba_rxn_vars.append({
+                "modelreaction_ref": f"~/modelreactions/id/{rxn.id}",
+                "value": round(flux, 6),
+                "lowerBound": rxn.lower_bound,
+                "upperBound": rxn.upper_bound,
+                "class": "Blocked" if abs(flux) < 1e-6 else ("Positive" if flux > 0 else "Negative"),
+                "name": rxn.name or rxn.id,
+            })
+        for met in cobra_model.metabolites:
+            if met.id.endswith("_e0"):
+                exc_rxn_id = f"EX_{met.id}"
+                if exc_rxn_id in solution.fluxes:
+                    flux = solution.fluxes[exc_rxn_id]
+                    fba_cpd_vars.append({
+                        "modelcompound_ref": f"~/modelcompounds/id/{met.id}",
+                        "value": round(flux, 6),
+                        "lowerBound": -1000,
+                        "upperBound": 1000,
+                        "class": "Blocked" if abs(flux) < 1e-6 else ("Uptake" if flux < 0 else "Secretion"),
+                        "name": met.name or met.id,
+                    })
+
         # Save FBA result object to workspace
         update_job(job_file, {"progress": "Saving FBA results..."})
         fba_result_obj = {
@@ -156,6 +184,8 @@ def main():
             "status": solution.status,
             "nonzero_fluxes": len(fluxes),
             "fluxes": fluxes,
+            "FBAReactionVariables": fba_rxn_vars,
+            "FBACompoundVariables": fba_cpd_vars,
             "rundate": now(),
         }
         ws.create({

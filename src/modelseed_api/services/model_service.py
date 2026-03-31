@@ -29,6 +29,15 @@ def _safe_int(val, default=0):
         return default
 
 
+def _normalize_ref(model_ref: str) -> str:
+    """Strip trailing /model from model_ref if present.
+
+    The frontend may send refs ending with /model (e.g. /user/modelseed/Model/model)
+    while service methods also append /model. This prevents double-suffix 404s.
+    """
+    return model_ref[:-6] if model_ref.endswith("/model") else model_ref
+
+
 def _build_equation(reagents: list[dict], cpd_names: dict[str, str], direction: str) -> str:
     """Synthesize a human-readable equation string from modelReactionReagents."""
     lhs = []
@@ -225,7 +234,7 @@ class ModelService:
 
     def get_model_raw(self, model_ref: str) -> dict:
         """Get the raw workspace model object (for export/conversion)."""
-        model_path = f"{model_ref}/model"
+        model_path = f"{_normalize_ref(model_ref)}/model"
         result = self.ws.get({"objects": [model_path]})
         if not result or len(result) == 0:
             raise ValueError(f"Model not found: {model_ref}")
@@ -507,6 +516,7 @@ class ModelService:
         2. ModelSEEDpy format: reaction-level gapfill_data on modelreactions,
            keyed by gapfill ID (created by MSModelUtil.create_kb_gapfilling_data)
         """
+        model_ref = _normalize_ref(model_ref)
         model_path = f"{model_ref}/model"
         result = self.ws.get({"objects": [model_path]})
 
@@ -1235,6 +1245,7 @@ class ModelService:
 
     def list_fba_studies(self, model_ref: str) -> list[dict]:
         """List FBA studies associated with a model."""
+        model_ref = _normalize_ref(model_ref)
         model_path = f"{model_ref}/model"
         result = self.ws.get({"objects": [model_path]})
 
@@ -1269,6 +1280,7 @@ class ModelService:
         object at {model_ref}/{fba_id}, while the model's fba_studies array
         only contains summary metadata (no fluxes).
         """
+        model_ref = _normalize_ref(model_ref)
         fba_path = f"{model_ref}/{fba_id}"
         result = self.ws.get({"objects": [fba_path]})
         fba_obj = self._parse_ws_data(result)
@@ -1284,7 +1296,7 @@ class ModelService:
             except Exception:
                 pass  # .fluxtbl may not exist
 
-        return {
+        result_dict = {
             "id": fba_obj.get("id", fba_id),
             "model_ref": fba_obj.get("model_ref", model_ref),
             "media_ref": fba_obj.get("media_ref", ""),
@@ -1293,6 +1305,13 @@ class ModelService:
             "rundate": fba_obj.get("rundate", ""),
             "fluxes": {k: float(v) for k, v in fluxes.items()},
         }
+
+        # Pass through KBase-format variable arrays if present
+        for key in ("FBAReactionVariables", "FBACompoundVariables"):
+            if key in fba_obj:
+                result_dict[key] = fba_obj[key]
+
+        return result_dict
 
     @staticmethod
     def _parse_fluxtbl(tbl_data: str) -> dict[str, float]:
