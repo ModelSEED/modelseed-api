@@ -225,9 +225,14 @@ class ModelService:
                     + model_obj.get("fba_studies", [])
                 )
                 actual_gf = len(model_obj.get("gapfillings", []))
+                org_name = user_meta.get("organism_name", "")
+                bad_organism = not org_name or "||" in org_name
+                if bad_organism:
+                    # Clear bad value so repair code re-derives it
+                    formatted["organism_name"] = None
                 needs_repair = (
                     not user_meta.get("num_reactions")
-                    or not user_meta.get("organism_name")
+                    or bad_organism
                     or _safe_int(user_meta.get("fba_count", 0)) != actual_fba
                     or _safe_int(user_meta.get("integrated_gapfills", 0)) != actual_gf
                 )
