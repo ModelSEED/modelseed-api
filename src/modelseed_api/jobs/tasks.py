@@ -453,10 +453,29 @@ def run_fba(
         pass  # cobra_model not available, fall back to workspace format
 
     if cobra_model is None:
-        from modelseed_api.services.export_service import workspace_model_to_cobra
+        # Use FBAModelBuilder (same as gapfill) for a working cobra model,
+        # then save cobra_model for future FBA runs (lazy migration).
+        import cobra.io
+        from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
+
         model_obj = _fetch_model_obj(ws, model_ref, token)
-        cobra_model = workspace_model_to_cobra(model_obj)
-        logger.info("Loaded model from workspace format (fallback) for %s", model_ref)
+        cobra_model = FBAModelBuilder(model_obj).build()
+        cobra_model.objective = "bio1"
+
+        # Persist cobra_model so future FBA runs are fast + lossless
+        try:
+            cobra_json = json.dumps(cobra.io.model_to_dict(cobra_model))
+            ws.create({
+                "objects": [[
+                    f"{model_ref}/cobra_model", "string", {}, cobra_json,
+                ]],
+                "overwrite": 1,
+            })
+            logger.info("Migrated: saved cobra_model for %s", model_ref)
+        except Exception:
+            logger.warning("Could not save cobra_model for %s", model_ref, exc_info=True)
+
+        logger.info("Loaded model via FBAModelBuilder (fallback) for %s", model_ref)
     else:
         # Still need model_obj for saving FBA study back to model
         model_obj = _fetch_model_obj(ws, model_ref, token)
