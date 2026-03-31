@@ -243,8 +243,9 @@ def main():
             # Explicitly set folder metadata (ws.create may not persist it)
             try:
                 ws.update_metadata({"objects": [[output_path, folder_meta]]})
-            except Exception:
-                pass  # non-critical
+                print(f"Updated folder metadata for {output_path}")
+            except Exception as e:
+                print(f"Warning: failed to update folder metadata: {e}")
 
             print(f"Model saved to workspace: {output_path}")
 

@@ -201,8 +201,9 @@ def main():
                         "integrated_gapfills": str(n_gapfillings),
                     }]],
                 })
-            except Exception:
-                pass
+                print(f"Updated gapfill metadata: {n_gapfillings} gapfillings")
+            except Exception as e:
+                print(f"Warning: failed to update gapfill metadata: {e}")
             print(f"Gapfilled model saved to workspace: {model_ref}")
 
         result_data = {

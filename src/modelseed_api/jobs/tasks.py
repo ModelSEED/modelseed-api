@@ -274,8 +274,9 @@ def reconstruct(
 
         try:
             ws.update_metadata({"objects": [[output_path, folder_meta]]})
-        except Exception:
-            pass
+            logger.info("Updated folder metadata for %s", output_path)
+        except Exception as e:
+            logger.warning("Failed to update folder metadata for %s: %s", output_path, e)
 
     return {
         "status": "success",
@@ -398,8 +399,9 @@ def gapfill(
                     "integrated_gapfills": str(n_gapfillings),
                 }]],
             })
-        except Exception:
-            pass
+            logger.info("Updated gapfill metadata for %s: %d gapfillings", model_ref, n_gapfillings)
+        except Exception as e:
+            logger.warning("Failed to update gapfill metadata for %s: %s", model_ref, e)
 
     return {
         "status": "success",

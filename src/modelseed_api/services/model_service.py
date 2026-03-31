@@ -7,6 +7,7 @@ gapfilling, FBA) are dispatched to external job scripts via the job system.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Optional
 
 import requests
@@ -185,6 +186,43 @@ class ModelService:
         resp.raise_for_status()
         return resp.json()
 
+    @staticmethod
+    def _extract_genome_id(genome_ref: str) -> str | None:
+        """Extract PATRIC genome ID (digits.digits) from a genome_ref.
+
+        Handles both plain IDs ("469009.4") and workspace paths
+        ("/user/modelseed/469009.4/genome||").
+        """
+        if not genome_ref:
+            return None
+        match = re.search(r"(\d+\.\d+)", genome_ref)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _lookup_genome_info(genome_id: str) -> dict | None:
+        """Look up organism name, taxonomy, and domain from BV-BRC API."""
+        if not genome_id:
+            return None
+        try:
+            resp = requests.get(
+                f"https://www.bv-brc.org/api/genome/{genome_id}",
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            # taxon_lineage_names is an array — join as semicolon-separated string
+            lineage = data.get("taxon_lineage_names", [])
+            taxonomy = "; ".join(lineage) if isinstance(lineage, list) else str(lineage)
+            return {
+                "organism_name": data.get("genome_name", ""),
+                "taxonomy": taxonomy,
+                "domain": data.get("kingdom", ""),
+            }
+        except Exception:
+            return None
+
     def get_model_raw(self, model_ref: str) -> dict:
         """Get the raw workspace model object (for export/conversion)."""
         model_path = f"{model_ref}/model"
@@ -233,6 +271,8 @@ class ModelService:
                 needs_repair = (
                     not user_meta.get("num_reactions")
                     or bad_organism
+                    or not user_meta.get("taxonomy")
+                    or not user_meta.get("domain")
                     or _safe_int(user_meta.get("fba_count", 0)) != actual_fba
                     or _safe_int(user_meta.get("integrated_gapfills", 0)) != actual_gf
                 )
@@ -281,33 +321,46 @@ class ModelService:
             meta["fba_count"] = str(fba_count)
             meta["integrated_gapfills"] = str(gf_count)
 
-        # Also repair organism info from the model object if missing
-        if model_obj and (not formatted.get("organism_name") or not formatted.get("genome_ref")):
-            genome_ref = model_obj.get("genome_ref", "")
-            if genome_ref and not formatted.get("genome_ref"):
-                meta["genome_ref"] = genome_ref
-                formatted["genome_ref"] = genome_ref
-            if not formatted.get("organism_name"):
-                # Try model name first (usually set to scientific_name during build)
-                model_name = model_obj.get("name", "")
-                if model_name:
-                    meta["organism_name"] = model_name
-                    formatted["organism_name"] = model_name
-                elif genome_ref:
-                    # Extract genome ID from genome_ref, stripping workspace
-                    # type suffixes like "genome||" that old ProbModelSEED adds
-                    parts = genome_ref.rstrip("/").split("/")
-                    # Walk backwards to find a part that looks like a genome ID
-                    # (contains a dot + digits), skip "genome||" etc.
-                    genome_name = None
-                    for part in reversed(parts):
-                        clean = part.split("|")[0]  # strip || suffix
-                        if clean and clean != "genome" and clean != ".":
-                            genome_name = clean
-                            break
-                    if genome_name:
-                        meta["organism_name"] = genome_name
-                        formatted["organism_name"] = genome_name
+        # Repair organism info, taxonomy, and domain from model object + BV-BRC API
+        genome_ref = (
+            formatted.get("genome_ref")
+            or (model_obj.get("genome_ref", "") if model_obj else "")
+        )
+        if genome_ref and not formatted.get("genome_ref"):
+            meta["genome_ref"] = genome_ref
+            formatted["genome_ref"] = genome_ref
+
+        # Try to get organism_name from model object first
+        if model_obj and not formatted.get("organism_name"):
+            model_name = model_obj.get("name", "")
+            if model_name:
+                meta["organism_name"] = model_name
+                formatted["organism_name"] = model_name
+
+        # Look up taxonomy/domain/organism from BV-BRC API if any are missing
+        needs_bvbrc = (
+            not formatted.get("organism_name")
+            or not formatted.get("taxonomy")
+            or not formatted.get("domain")
+        )
+        if needs_bvbrc:
+            genome_id = self._extract_genome_id(genome_ref)
+            if not genome_id and model_obj:
+                # Try the folder-level id or source_id
+                genome_id = self._extract_genome_id(
+                    formatted.get("id", "") or model_obj.get("id", "")
+                )
+            genome_info = self._lookup_genome_info(genome_id)
+            if genome_info:
+                if genome_info.get("organism_name") and not formatted.get("organism_name"):
+                    meta["organism_name"] = genome_info["organism_name"]
+                    formatted["organism_name"] = genome_info["organism_name"]
+                if genome_info.get("taxonomy") and not formatted.get("taxonomy"):
+                    meta["taxonomy"] = genome_info["taxonomy"]
+                    formatted["taxonomy"] = genome_info["taxonomy"]
+                if genome_info.get("domain") and not formatted.get("domain"):
+                    meta["domain"] = genome_info["domain"]
+                    formatted["domain"] = genome_info["domain"]
 
         self.ws.update_metadata({
             "objects": [[model_ref, meta]],

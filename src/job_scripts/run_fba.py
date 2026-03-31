@@ -189,8 +189,9 @@ def main():
                     "fba_count": str(fba_idx + 1),
                 }]],
             })
-        except Exception:
-            pass
+            print(f"Updated FBA metadata: fba_count={fba_idx + 1}")
+        except Exception as e:
+            print(f"Warning: failed to update FBA metadata: {e}")
 
         result_data = {
             "status": "success",
