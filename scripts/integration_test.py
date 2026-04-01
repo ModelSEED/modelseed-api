@@ -238,11 +238,21 @@ class TestRunner:
 
         self.all_models = models
 
-        # Pick models for later tests
+        # Pick models for later tests — prefer models with reactions and
+        # cobra_model (those will actually work for FBA/gapfill)
+        best_ref = None
+        best_rxns = -1
         for m in models:
             if m.get("ref"):
+                rxns = int(m.get("num_reactions", 0) or 0)
+                if rxns > best_rxns:
+                    best_rxns = rxns
+                    best_ref = m["ref"]
                 if not self.model_ref:
                     self.model_ref = m["ref"]
+        # Override with best model (most reactions = most likely to have cobra_model)
+        if best_ref and best_rxns > 0:
+            self.model_ref = best_ref
 
         issues = []
         for m in models:
@@ -984,27 +994,94 @@ class TestRunner:
         return ", ".join(results)
 
     # ═══════════════════════════════════════════════════════════════════
-    # 10c. END-TO-END PIPELINE: gapfill → FBA → verify objective > 0
-    #      This is THE test that proves the full pipeline works
+    # 10c. FULL END-TO-END PIPELINE: reconstruct → gapfill → FBA
+    #      THE test that proves the entire pipeline works.
+    #      Uses Bacillus subtilis 224308.43 as a fresh test genome to
+    #      guarantee gapfill finds solutions (fresh model, no prior gapfills).
     # ═══════════════════════════════════════════════════════════════════
 
-    def test_end_to_end_fba_on_gapfilled_model(self):
-        """Run FBA on a model that was gapfilled → verify objective > 0."""
-        # Use a model we know has been gapfilled (from gapfill test or pre-existing)
-        gf_ref = getattr(self, "_gapfilled_model_ref", None)
-        if not gf_ref:
-            # Fall back to any model with integrated gapfills
-            for m in self.all_models:
-                gf_count = m.get("integrated_gapfills")
-                rxns = m.get("num_reactions")
-                if gf_count and int(gf_count) > 0 and rxns and int(rxns) > 0:
-                    gf_ref = m["ref"]
-                    break
-        if not gf_ref:
-            return "no gapfilled model available"
+    def test_pipeline_reconstruct(self):
+        """Step 1: Reconstruct B. subtilis 224308.43, wait for completion."""
+        if not self.username:
+            return "no username"
+        # Use a unique output path so we don't collide with existing models
+        self._pipeline_genome = "224308.43"
+        self._pipeline_output = f"/{self.username}/modelseed/{self._pipeline_genome}"
+        r = self.post("/api/jobs/reconstruct", {
+            "genome": self._pipeline_genome,
+            "template_type": "gp",
+            "gapfill": False,
+            "media": None,
+            "output_path": self._pipeline_output,
+        })
+        assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
+        job_id = extract_job_id(r.json())
+        assert job_id, f"could not extract job_id from: {r.text[:200]}"
+
+        # Wait for reconstruction to complete (can take 2-10 min)
+        status, job = poll_job(self, job_id, max_seconds=600)
+
+        if status == "timeout":
+            self.warn(f"Reconstruction of {self._pipeline_genome} timed out after 10 min")
+            return f"job {job_id[:8]}... timeout (reconstruction still running)"
+        if status == "failed":
+            error = job.get("error", "unknown")
+            raise AssertionError(f"Reconstruction failed: {error}")
+
+        result = job.get("result", {})
+        n_rxns = result.get("reactions", "?")
+        n_genes = result.get("genes", "?")
+        classification = result.get("classification", "?")
+        self._pipeline_model_ref = self._pipeline_output
+        return (f"completed: {n_rxns} reactions, {n_genes} genes, "
+                f"class={classification}")
+
+    def test_pipeline_gapfill(self):
+        """Step 2: Gapfill the freshly reconstructed model → expect solutions > 0."""
+        model_ref = getattr(self, "_pipeline_model_ref", None)
+        if not model_ref:
+            return "skipped (reconstruction didn't complete)"
+
+        r = self.post("/api/jobs/gapfill", {
+            "model": model_ref,
+            "template_type": "gp",
+            "media": "Complete",
+        })
+        assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
+        job_id = extract_job_id(r.json())
+        assert job_id, f"could not extract job_id"
+
+        status, job = poll_job(self, job_id, max_seconds=600)
+
+        if status == "timeout":
+            self.warn(f"Gapfill timed out after 10 min")
+            return f"job {job_id[:8]}... timeout"
+        if status == "failed":
+            error = job.get("error", "unknown")
+            raise AssertionError(f"Gapfill failed: {error}")
+
+        result = job.get("result", {})
+        solutions = result.get("solutions_count", 0)
+        added = result.get("added_reactions", 0)
+        added_ids = result.get("added_reaction_ids", [])
+
+        # CRITICAL: a fresh model should ALWAYS find gapfill solutions
+        assert solutions > 0, (
+            f"Gapfill found 0 solutions on fresh {self._pipeline_genome} model — "
+            f"this is a BUG (E. coli / B. subtilis always gapfill successfully)"
+        )
+        self._pipeline_gapfilled = True
+        return (f"{solutions} solution(s), {added} reactions added"
+                + (f" ({', '.join(added_ids[:5])})" if added_ids else ""))
+
+    def test_pipeline_fba_complete(self):
+        """Step 3: FBA on gapfilled model with Complete media → objective > 0."""
+        model_ref = getattr(self, "_pipeline_model_ref", None)
+        if not model_ref or not getattr(self, "_pipeline_gapfilled", False):
+            return "skipped (no gapfilled model from pipeline)"
 
         r = self.post("/api/jobs/fba", {
-            "model": gf_ref,
+            "model": model_ref,
             "media": "Complete",
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
@@ -1014,36 +1091,28 @@ class TestRunner:
         status, job = poll_job(self, job_id, max_seconds=300)
 
         if status == "timeout":
-            return f"FBA job {job_id} still running after 5 min"
+            return f"FBA job {job_id[:8]}... timeout"
         if status == "failed":
-            raise AssertionError(f"FBA on gapfilled model failed: {job.get('error')}")
+            raise AssertionError(f"FBA failed: {job.get('error')}")
 
         result = job.get("result", {})
         obj_val = result.get("objective_value", 0)
         fba_id = result.get("fba_id", "?")
 
-        # THE CRITICAL ASSERTION: gapfilled model must produce biomass
-        if obj_val and float(obj_val) > 0:
-            return f"PIPELINE OK: {fba_id} objective={obj_val} on {gf_ref.split('/')[-1]}"
-        else:
-            self.warn(f"FBA objective={obj_val} on gapfilled model {gf_ref} — expected > 0")
-            return f"objective={obj_val} (may need investigation)"
+        assert float(obj_val) > 0, (
+            f"FBA objective={obj_val} on gapfilled model — expected > 0. "
+            f"This means the model is infeasible after gapfilling."
+        )
+        return f"PIPELINE OK: {fba_id} objective={obj_val}"
 
-    def test_end_to_end_fba_with_media_on_gapfilled(self):
-        """Run FBA with specific media on gapfilled model → verify it completes."""
-        gf_ref = getattr(self, "_gapfilled_model_ref", None)
-        if not gf_ref:
-            for m in self.all_models:
-                gf_count = m.get("integrated_gapfills")
-                rxns = m.get("num_reactions")
-                if gf_count and int(gf_count) > 0 and rxns and int(rxns) > 0:
-                    gf_ref = m["ref"]
-                    break
-        if not gf_ref:
-            return "no gapfilled model available"
+    def test_pipeline_fba_glucose(self):
+        """Step 4: FBA with Carbon-D-Glucose media → objective > 0 (different from Complete)."""
+        model_ref = getattr(self, "_pipeline_model_ref", None)
+        if not model_ref or not getattr(self, "_pipeline_gapfilled", False):
+            return "skipped (no gapfilled model from pipeline)"
 
         r = self.post("/api/jobs/fba", {
-            "model": gf_ref,
+            "model": model_ref,
             "media": "Carbon-D-Glucose",
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
@@ -1053,47 +1122,17 @@ class TestRunner:
         status, job = poll_job(self, job_id, max_seconds=300)
 
         if status == "timeout":
-            return f"FBA job {job_id} still running"
+            return f"FBA job {job_id[:8]}... timeout"
         if status == "failed":
-            raise AssertionError(f"FBA with media failed: {job.get('error')}")
+            raise AssertionError(f"FBA with glucose failed: {job.get('error')}")
 
         result = job.get("result", {})
         obj_val = result.get("objective_value", 0)
-        return f"objective={obj_val} with Carbon-D-Glucose media"
+        return f"objective={obj_val} with Carbon-D-Glucose"
 
     # ═══════════════════════════════════════════════════════════════════
-    # 10d. RECONSTRUCT JOB — tests the Build Model pipeline
+    # 10d. RECONSTRUCT JOB — additional reconstruction tests
     # ═══════════════════════════════════════════════════════════════════
-
-    def test_reconstruct_job_submission(self):
-        """Submit a model reconstruction job, verify API accepts it."""
-        # Use E. coli K-12 (well-known genome) — just verify the job starts,
-        # don't wait for completion (reconstruction takes 5-15 min)
-        if not self.username:
-            return "no username"
-        output_path = f"/{self.username}/modelseed/511145.12"
-        r = self.post("/api/jobs/reconstruct", {
-            "genome": "511145.12",
-            "template_type": "gn",
-            "gapfill": False,
-            "media": None,
-            "output_path": output_path,
-        })
-        assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
-        job_id = extract_job_id(r.json())
-        assert job_id, f"could not extract job_id from: {r.text[:200]}"
-
-        # Just verify job appears in job list with correct structure
-        time.sleep(2)
-        r2 = self.get("/api/jobs", params={"ids": job_id})
-        assert r2.status_code == 200, f"job listing failed: {r2.status_code}"
-        jobs = r2.json()
-        if job_id in jobs:
-            job = jobs[job_id]
-            status = job.get("status", "unknown")
-            app = job.get("parameters", {}).get("command", "")
-            return f"job {job_id[:8]}... status={status}, app={app}"
-        return f"job {job_id[:8]}... submitted (not yet in listing)"
 
     def test_reconstruct_with_gapfill(self):
         """Submit reconstruction with gapfill=True (frontend checkbox)."""
@@ -1339,8 +1378,8 @@ class TestRunner:
             self.skip_test("fba_glucose", "no models")
             self.skip_test("fba_result_arrays", "no models")
 
-        # 10b. Gapfill jobs — THE MOST IMPORTANT PIPELINE TEST
-        print("\n── 10b. Gapfill Job Submission (slow — up to 10 min each) ──")
+        # 10b. Gapfill jobs on EXISTING model (re-gapfill)
+        print("\n── 10b. Gapfill Job Submission (existing model) ──")
         if self.model_ref and self._pick_model_with_reactions():
             self.run_test("gapfill_complete", self.test_gapfill_job_complete_media)
             self.run_test("gapfill_glucose", self.test_gapfill_job_glucose_media)
@@ -1351,14 +1390,16 @@ class TestRunner:
                        "gapfill_result_model", "gapfill_template_types"):
                 self.skip_test(t, "no models with reactions")
 
-        # 10c. End-to-end: gapfill → FBA → verify objective > 0
-        print("\n── 10c. End-to-End Pipeline (gapfill → FBA) ──")
-        self.run_test("e2e_fba_gapfilled", self.test_end_to_end_fba_on_gapfilled_model)
-        self.run_test("e2e_fba_media_gapfilled", self.test_end_to_end_fba_with_media_on_gapfilled)
+        # 10c. FULL END-TO-END PIPELINE: reconstruct → gapfill → FBA
+        # This is THE critical pipeline test — proves the entire backend works
+        print("\n── 10c. Full Pipeline: Reconstruct → Gapfill → FBA (slow) ──")
+        self.run_test("pipeline_reconstruct", self.test_pipeline_reconstruct)
+        self.run_test("pipeline_gapfill", self.test_pipeline_gapfill)
+        self.run_test("pipeline_fba_complete", self.test_pipeline_fba_complete)
+        self.run_test("pipeline_fba_glucose", self.test_pipeline_fba_glucose)
 
-        # 10d. Reconstruct jobs
-        print("\n── 10d. Reconstruction Job Submission ──")
-        self.run_test("reconstruct_basic", self.test_reconstruct_job_submission)
+        # 10d. Additional reconstruction tests
+        print("\n── 10d. Additional Reconstruction ──")
         self.run_test("reconstruct_gapfill", self.test_reconstruct_with_gapfill)
 
         # 10e. Job management
