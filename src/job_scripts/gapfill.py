@@ -89,6 +89,12 @@ def main():
         update_job(job_file, {"progress": "Converting model..."})
         from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
         from modelseedpy.core.msmodelutl import MSModelUtil
+        # WORKAROUND: FBAModelBuilder does hard key access on 'optionalSubunit'
+        # which is @optional in the KBase spec — old models lack this field.
+        for _rxn in model_obj.get("modelreactions", []):
+            for _prot in _rxn.get("modelReactionProteins", []):
+                for _sub in _prot.get("modelReactionProteinSubunits", []):
+                    _sub.setdefault("optionalSubunit", 0)
         fba_model = FBAModelBuilder(model_obj).build()
         mdlutl = MSModelUtil.get(fba_model)
 

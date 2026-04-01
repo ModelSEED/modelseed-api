@@ -94,6 +94,20 @@ def _fetch_model_obj(ws, model_ref: str, token: str) -> dict:
     return {}
 
 
+def _patch_model_for_builder(model_obj: dict) -> dict:
+    """Add default optional fields that FBAModelBuilder expects but old models lack.
+
+    cobrakbase FBAModelBuilder accesses 'optionalSubunit' with a hard key
+    lookup (not .get()), so models missing this @optional field crash with
+    KeyError('optionalSubunit'). This patches the data in place.
+    """
+    for rxn in model_obj.get("modelreactions", []):
+        for prot in rxn.get("modelReactionProteins", []):
+            for sub in prot.get("modelReactionProteinSubunits", []):
+                sub.setdefault("optionalSubunit", 0)
+    return model_obj
+
+
 def _load_media(media_ref: str, token: str):
     """Load media from workspace and convert to MSMedia object.
 
@@ -362,7 +376,7 @@ def gapfill(
     self.update_state(state="PROGRESS", meta={"status": "Converting model..."})
     from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
     from modelseedpy.core.msmodelutl import MSModelUtil
-    fba_model = FBAModelBuilder(model_obj).build()
+    fba_model = FBAModelBuilder(_patch_model_for_builder(model_obj)).build()
     mdlutl = MSModelUtil.get(fba_model)
 
     # Load template
@@ -495,7 +509,7 @@ def run_fba(
         from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
 
         model_obj = _fetch_model_obj(ws, model_ref, token)
-        cobra_model = FBAModelBuilder(model_obj).build()
+        cobra_model = FBAModelBuilder(_patch_model_for_builder(model_obj)).build()
         cobra_model.objective = "bio1"
 
         # Persist cobra_model so future FBA runs are fast + lossless

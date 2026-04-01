@@ -99,6 +99,13 @@ def main():
             import cobra.io
             from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
 
+            # WORKAROUND: FBAModelBuilder does hard key access on 'optionalSubunit'
+            # which is @optional in the KBase spec — old models lack this field.
+            for _rxn in model_obj.get("modelreactions", []):
+                for _prot in _rxn.get("modelReactionProteins", []):
+                    for _sub in _prot.get("modelReactionProteinSubunits", []):
+                        _sub.setdefault("optionalSubunit", 0)
+
             cobra_model = FBAModelBuilder(model_obj).build()
             cobra_model.objective = "bio1"
 
