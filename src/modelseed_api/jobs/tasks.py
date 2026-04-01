@@ -422,11 +422,30 @@ def gapfill(
     ws = get_storage_service(token)
     model_obj = _fetch_model_obj(ws, model_ref, token)
 
-    # Load as FBAModel (preserves workspace format for save-back)
+    # Prefer cobra_model (lossless cobra JSON) over FBAModelBuilder.
+    # FBAModelBuilder's round-trip loses exchange bounds and can produce
+    # infeasible models, preventing gapfill from finding any solution.
     self.update_state(state="PROGRESS", meta={"status": "Converting model..."})
-    from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
     from modelseedpy.core.msmodelutl import MSModelUtil
-    fba_model = FBAModelBuilder(_patch_model_for_builder(model_obj)).build()
+
+    fba_model = None
+    try:
+        cobra_result = ws.get({"objects": [f"{model_ref}/cobra_model"]})
+        if cobra_result and cobra_result[0]:
+            raw = cobra_result[0][1] if len(cobra_result[0]) > 1 else None
+            if raw and isinstance(raw, str) and not raw.startswith("http"):
+                import cobra.io
+                fba_model = cobra.io.model_from_dict(json.loads(raw))
+                fba_model.objective = "bio1"
+                logger.info("Loaded cobra_model from workspace (lossless)")
+    except Exception:
+        pass  # cobra_model not available
+
+    if fba_model is None:
+        from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
+        fba_model = FBAModelBuilder(_patch_model_for_builder(model_obj)).build()
+        logger.info("Loaded model via FBAModelBuilder (fallback)")
+
     mdlutl = MSModelUtil.get(fba_model)
 
     # Load template

@@ -60,42 +60,63 @@ def main():
         # Step 1: Fetch model from storage
         update_job(job_file, {"progress": "Loading model..."})
         ws = get_storage_service(args.token)
-        model_path = f"{model_ref}/model"
-        result = ws.get({"objects": [model_path]})
 
-        if not result or len(result) == 0:
-            raise ValueError(f"Model not found: {model_ref}")
-
-        raw_data = result[0][1] if len(result[0]) > 1 else "{}"
-        if isinstance(raw_data, str):
-            if raw_data.startswith("http") and "shock" in raw_data:
-                import requests
-                download_url = raw_data.rstrip("/") + "?download"
-                resp = requests.get(
-                    download_url,
+        def _fetch_raw(obj_path):
+            """Fetch raw data from workspace, handling Shock URLs."""
+            result = ws.get({"objects": [obj_path]})
+            if not result or len(result) == 0:
+                return None
+            raw = result[0][1] if len(result[0]) > 1 else None
+            if isinstance(raw, str) and raw.startswith("http") and "shock" in raw:
+                import requests as _req
+                resp = _req.get(
+                    raw.rstrip("/") + "?download",
                     headers={"Authorization": f"OAuth {args.token}"},
                     timeout=60,
                 )
                 resp.raise_for_status()
-                model_obj = resp.json()
-            else:
-                model_obj = json.loads(raw_data)
-        elif isinstance(raw_data, dict):
-            model_obj = raw_data
+                return resp.text
+            return raw
+
+        # Always need model_obj for workspace format (persistence)
+        model_raw = _fetch_raw(f"{model_ref}/model")
+        if model_raw is None:
+            raise ValueError(f"Model not found: {model_ref}")
+        if isinstance(model_raw, str):
+            model_obj = json.loads(model_raw)
+        elif isinstance(model_raw, dict):
+            model_obj = model_raw
         else:
             model_obj = {}
 
-        # Step 2: Load model as FBAModel (preserves workspace format for save-back)
+        # Step 2: Prefer cobra_model (lossless cobra JSON) over FBAModelBuilder.
+        # FBAModelBuilder's round-trip loses exchange bounds and can produce
+        # infeasible models, preventing gapfill from finding any solution.
         update_job(job_file, {"progress": "Converting model..."})
-        from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
         from modelseedpy.core.msmodelutl import MSModelUtil
-        # WORKAROUND: FBAModelBuilder does hard key access on 'optionalSubunit'
-        # which is @optional in the KBase spec — old models lack this field.
-        for _rxn in model_obj.get("modelreactions", []):
-            for _prot in _rxn.get("modelReactionProteins", []):
-                for _sub in _prot.get("modelReactionProteinSubunits", []):
-                    _sub.setdefault("optionalSubunit", 0)
-        fba_model = FBAModelBuilder(model_obj).build()
+
+        fba_model = None
+        try:
+            cobra_raw = _fetch_raw(f"{model_ref}/cobra_model")
+            if cobra_raw and isinstance(cobra_raw, str) and not cobra_raw.startswith("http"):
+                import cobra.io
+                fba_model = cobra.io.model_from_dict(json.loads(cobra_raw))
+                fba_model.objective = "bio1"
+                print(f"Loaded cobra_model from workspace (lossless)")
+        except Exception:
+            pass  # cobra_model not available, fall back to FBAModelBuilder
+
+        if fba_model is None:
+            from cobrakbase.core.kbasefba.fbamodel_builder import FBAModelBuilder
+            # WORKAROUND: FBAModelBuilder does hard key access on 'optionalSubunit'
+            # which is @optional in the KBase spec — old models lack this field.
+            for _rxn in model_obj.get("modelreactions", []):
+                for _prot in _rxn.get("modelReactionProteins", []):
+                    for _sub in _prot.get("modelReactionProteinSubunits", []):
+                        _sub.setdefault("optionalSubunit", 0)
+            fba_model = FBAModelBuilder(model_obj).build()
+            print(f"Loaded model via FBAModelBuilder (fallback)")
+
         mdlutl = MSModelUtil.get(fba_model)
 
         # Step 3: Load template

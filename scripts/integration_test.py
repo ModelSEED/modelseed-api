@@ -1069,11 +1069,15 @@ class TestRunner:
         """Submit a model reconstruction job, verify API accepts it."""
         # Use E. coli K-12 (well-known genome) — just verify the job starts,
         # don't wait for completion (reconstruction takes 5-15 min)
+        if not self.username:
+            return "no username"
+        output_path = f"/{self.username}/modelseed/511145.12"
         r = self.post("/api/jobs/reconstruct", {
             "genome": "511145.12",
             "template_type": "gn",
             "gapfill": False,
             "media": None,
+            "output_path": output_path,
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
@@ -1093,11 +1097,15 @@ class TestRunner:
 
     def test_reconstruct_with_gapfill(self):
         """Submit reconstruction with gapfill=True (frontend checkbox)."""
+        if not self.username:
+            return "no username"
+        output_path = f"/{self.username}/modelseed/83332.12"
         r = self.post("/api/jobs/reconstruct", {
             "genome": "83332.12",
             "template_type": "gp",
             "gapfill": True,
             "media": "Complete",
+            "output_path": output_path,
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
