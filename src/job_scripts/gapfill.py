@@ -298,6 +298,25 @@ def main():
 
             ws_data = fba_model.get_data()
 
+            # Preserve KBase-specific fields that cobra.io roundtrip loses:
+            # gapfillings, fbaFormulations/fba_studies, and reaction gapfill_data.
+            for key in ("gapfillings", "fbaFormulations", "fba_studies"):
+                if key in model_obj and model_obj[key]:
+                    ws_data.setdefault(key, [])
+                    existing_ids = {g.get("id") for g in ws_data[key]}
+                    for entry in model_obj[key]:
+                        if entry.get("id") not in existing_ids:
+                            ws_data[key].append(entry)
+            # Restore gapfill_data on reactions from original model data
+            old_gf_data = {}
+            for rxn in model_obj.get("modelreactions", []):
+                if rxn.get("gapfill_data"):
+                    old_gf_data[rxn["id"]] = rxn["gapfill_data"]
+            if old_gf_data:
+                for rxn in ws_data.get("modelreactions", []):
+                    if rxn["id"] in old_gf_data:
+                        rxn.setdefault("gapfill_data", {}).update(old_gf_data[rxn["id"]])
+
             # Persist gapfilling solution data to model object
             mdlutl.create_kb_gapfilling_data(ws_data)
 
