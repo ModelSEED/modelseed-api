@@ -38,6 +38,33 @@ TEMPLATE_FILES = {
 }
 
 
+def _merge_ws_metadata(ws, obj_path: str, new_meta: dict):
+    """Merge new metadata into existing workspace metadata.
+
+    PATRIC workspace update_metadata replaces the entire user_meta dict,
+    so we must read existing metadata first, merge, then write back.
+    ls on a folder lists its children, so we ls the parent and find our item.
+    """
+    existing = {}
+    try:
+        obj_path = obj_path.rstrip("/")
+        parent = obj_path.rsplit("/", 1)[0] + "/"
+        obj_name = obj_path.rsplit("/", 1)[1]
+        result = ws.ls({"paths": [parent]})
+        if result:
+            for items in result.values():
+                for item in items:
+                    if item[0] == obj_name and len(item) > 7 and isinstance(item[7], dict):
+                        existing = item[7]
+                        break
+                if existing:
+                    break
+    except Exception:
+        pass
+    merged = {**existing, **new_meta}
+    ws.update_metadata({"objects": [[obj_path, merged]]})
+
+
 def _load_template(template_type: str):
     """Load a template from local JSON file using MSTemplateBuilder."""
     from modelseedpy import MSTemplateBuilder
@@ -371,7 +398,7 @@ def reconstruct(
         })
 
         try:
-            ws.update_metadata({"objects": [[output_path, folder_meta]]})
+            _merge_ws_metadata(ws, output_path, folder_meta)
             logger.info("Updated folder metadata for %s", output_path)
         except Exception as e:
             logger.warning("Failed to update folder metadata for %s: %s", output_path, e)
@@ -518,12 +545,10 @@ def gapfill(
 
         n_gapfillings = len(ws_data.get("gapfillings", []))
         try:
-            ws.update_metadata({
-                "objects": [[model_ref, {
-                    "num_reactions": str(len(fba_model.reactions)),
-                    "num_compounds": str(len(fba_model.metabolites)),
-                    "integrated_gapfills": str(n_gapfillings),
-                }]],
+            _merge_ws_metadata(ws, model_ref, {
+                "num_reactions": str(len(fba_model.reactions)),
+                "num_compounds": str(len(fba_model.metabolites)),
+                "integrated_gapfills": str(n_gapfillings),
             })
             logger.info("Updated gapfill metadata for %s: %d gapfillings", model_ref, n_gapfillings)
         except Exception as e:
@@ -715,10 +740,8 @@ def run_fba(
 
     # Update folder metadata with FBA count
     try:
-        ws.update_metadata({
-            "objects": [[model_ref, {
-                "fba_count": str(fba_idx + 1),
-            }]],
+        _merge_ws_metadata(ws, model_ref, {
+            "fba_count": str(fba_idx + 1),
         })
     except Exception as e:
         logger.warning("Failed to update fba_count metadata for %s: %s", model_ref, e)

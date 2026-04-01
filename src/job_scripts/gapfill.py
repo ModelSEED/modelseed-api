@@ -30,6 +30,33 @@ def update_job(job_file, updates):
         job_file.write_text(json.dumps(job, indent=2))
 
 
+def merge_ws_metadata(ws, obj_path, new_meta):
+    """Merge new metadata into existing workspace metadata.
+
+    PATRIC workspace update_metadata replaces the entire user_meta dict,
+    so we must read existing metadata first, merge, then write back.
+    ls on a folder lists its children, so we ls the parent and find our item.
+    """
+    existing = {}
+    try:
+        obj_path = obj_path.rstrip("/")
+        parent = obj_path.rsplit("/", 1)[0] + "/"
+        obj_name = obj_path.rsplit("/", 1)[1]
+        result = ws.ls({"paths": [parent]})
+        if result:
+            for items in result.values():
+                for item in items:
+                    if item[0] == obj_name and len(item) > 7 and isinstance(item[7], dict):
+                        existing = item[7]
+                        break
+                if existing:
+                    break
+    except Exception:
+        pass
+    merged = {**existing, **new_meta}
+    ws.update_metadata({"objects": [[obj_path, merged]]})
+
+
 def main():
     parser = argparse.ArgumentParser(description="Gapfilling job")
     parser.add_argument("--job-id", required=True)
@@ -277,12 +304,10 @@ def main():
             # Update folder metadata with counts from the model object
             n_gapfillings = len(ws_data.get("gapfillings", []))
             try:
-                ws.update_metadata({
-                    "objects": [[model_ref, {
-                        "num_reactions": str(len(fba_model.reactions)),
-                        "num_compounds": str(len(fba_model.metabolites)),
-                        "integrated_gapfills": str(n_gapfillings),
-                    }]],
+                merge_ws_metadata(ws, model_ref, {
+                    "num_reactions": str(len(fba_model.reactions)),
+                    "num_compounds": str(len(fba_model.metabolites)),
+                    "integrated_gapfills": str(n_gapfillings),
                 })
                 print(f"Updated gapfill metadata: {n_gapfillings} gapfillings")
             except Exception as e:

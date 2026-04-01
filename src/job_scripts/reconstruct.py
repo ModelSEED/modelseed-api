@@ -30,6 +30,33 @@ def update_job(job_file, updates):
         job_file.write_text(json.dumps(job, indent=2))
 
 
+def merge_ws_metadata(ws, obj_path, new_meta):
+    """Merge new metadata into existing workspace metadata.
+
+    PATRIC workspace update_metadata replaces the entire user_meta dict,
+    so we must read existing metadata first, merge, then write back.
+    ls on a folder lists its children, so we ls the parent and find our item.
+    """
+    existing = {}
+    try:
+        obj_path = obj_path.rstrip("/")
+        parent = obj_path.rsplit("/", 1)[0] + "/"
+        obj_name = obj_path.rsplit("/", 1)[1]
+        result = ws.ls({"paths": [parent]})
+        if result:
+            for items in result.values():
+                for item in items:
+                    if item[0] == obj_name and len(item) > 7 and isinstance(item[7], dict):
+                        existing = item[7]
+                        break
+                if existing:
+                    break
+    except Exception:
+        pass
+    merged = {**existing, **new_meta}
+    ws.update_metadata({"objects": [[obj_path, merged]]})
+
+
 
 
 def main():
@@ -304,7 +331,7 @@ def main():
 
             # Explicitly set folder metadata (ws.create may not persist it)
             try:
-                ws.update_metadata({"objects": [[output_path, folder_meta]]})
+                merge_ws_metadata(ws, output_path, folder_meta)
                 print(f"Updated folder metadata for {output_path}")
             except Exception as e:
                 print(f"Warning: failed to update folder metadata: {e}")

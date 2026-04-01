@@ -29,6 +29,26 @@ def _safe_int(val, default=0):
         return default
 
 
+def _read_existing_metadata(ws, obj_path: str) -> dict:
+    """Read existing user_meta for a workspace object.
+
+    ls on a folder lists its children, so we ls the parent and find our item.
+    """
+    try:
+        obj_path = obj_path.rstrip("/")
+        parent = obj_path.rsplit("/", 1)[0] + "/"
+        obj_name = obj_path.rsplit("/", 1)[1]
+        result = ws.ls({"paths": [parent]})
+        if result:
+            for items in result.values():
+                for item in items:
+                    if item[0] == obj_name and len(item) > 7 and isinstance(item[7], dict):
+                        return item[7]
+    except Exception:
+        pass
+    return {}
+
+
 def _normalize_ref(model_ref: str) -> str:
     """Strip trailing /model from model_ref if present.
 
@@ -66,6 +86,17 @@ class ModelService:
     def __init__(self, token: str):
         self.ws = get_storage_service(token)
         self.token = token
+
+    def _merge_metadata(self, obj_path: str, new_meta: dict):
+        """Merge new metadata into existing workspace metadata.
+
+        PATRIC workspace update_metadata replaces the entire user_meta dict,
+        so we must read the existing metadata first, merge, then write back.
+        ls on a folder lists its children, so we ls the parent and find our item.
+        """
+        existing = _read_existing_metadata(self.ws, obj_path)
+        merged = {**existing, **new_meta}
+        self.ws.update_metadata({"objects": [[obj_path, merged]]})
 
     def list_models(self, path: Optional[str] = None, username: str = "") -> list[dict]:
         """List all models for a user.
@@ -115,6 +146,10 @@ class ModelService:
                         "id": user_meta.get("id", obj_meta[0]),
                         "ref": obj_meta[2] + obj_meta[0],
                         "name": user_meta.get("name", obj_meta[0]),
+                        "owner": obj_meta[5] if len(obj_meta) > 5 else None,
+                        "creation_date": obj_meta[3],
+                        "modified": obj_meta[3],
+                        "wsid": obj_meta[4] if len(obj_meta) > 4 else None,
                         "source": user_meta.get("source"),
                         "source_id": user_meta.get("source_id"),
                         "type": user_meta.get("type"),
@@ -169,10 +204,8 @@ class ModelService:
                 if not m.get("organism_name") and info.get("organism_name"):
                     m["organism_name"] = info["organism_name"]
                 try:
-                    self.ws.update_metadata({
-                        "objects": [[m["ref"], {
-                            k: v for k, v in info.items() if v
-                        }]],
+                    self._merge_metadata(m["ref"], {
+                        k: v for k, v in info.items() if v
                     })
                 except Exception:
                     pass  # Non-critical — next listing will retry
@@ -400,9 +433,8 @@ class ModelService:
                     meta["domain"] = genome_info["domain"]
                     formatted["domain"] = genome_info["domain"]
 
-        self.ws.update_metadata({
-            "objects": [[model_ref, meta]],
-        })
+        if meta:
+            self._merge_metadata(model_ref, meta)
 
     def _format_model_data(self, ref: str, model_obj: dict) -> dict:
         """Format raw model object into ModelData shape."""
@@ -1245,7 +1277,7 @@ class ModelService:
             "num_biomasses": str(len(model_obj.get("biomasses", []))),
         }
         try:
-            self.ws.update_metadata({"objects": [[model_ref, meta]]})
+            self._merge_metadata(model_ref, meta)
         except Exception:
             pass  # non-critical
 

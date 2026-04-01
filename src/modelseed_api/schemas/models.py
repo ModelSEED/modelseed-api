@@ -70,6 +70,10 @@ class ModelStats(BaseModel):
     ref: str
     genome_ref: Optional[str] = None
     template_ref: Optional[str] = None
+    owner: Optional[str] = None
+    creation_date: Optional[str] = None
+    modified: Optional[str] = None
+    wsid: Optional[str] = None
     fba_count: int = 0
     integrated_gapfills: int = 0
     unintegrated_gapfills: int = 0
