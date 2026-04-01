@@ -1,5 +1,6 @@
 """Media routes - list public/user media, export."""
 
+import json
 from typing import Any, Optional
 from urllib.parse import unquote
 
@@ -63,13 +64,57 @@ async def export_media(
     ref: str = Query(..., description="Workspace reference to the media"),
     user: AuthUser = Depends(get_current_user),
 ) -> Any:
-    """Export a media condition as TSV."""
+    """Export a media condition as a parsed object.
+
+    Frontend reads: compounds[].{id, name, concentration, minFlux, maxFlux},
+    isDefined, isMinimal, name, id.
+    """
     ref = unquote(ref)
     ws = get_storage_service(user.token)
     try:
         result = ws.get({"objects": [ref]})
         if not result or len(result) == 0:
             raise HTTPException(status_code=404, detail=f"Media not found: {ref}")
-        return result
+
+        entry = result[0]
+        metadata = entry[0] if entry else []
+        raw = entry[1] if len(entry) > 1 else ""
+
+        # Parse media data (JSON or TSV format)
+        compounds = []
+        if isinstance(raw, str):
+            try:
+                obj = json.loads(raw)
+                if isinstance(obj, dict):
+                    return obj  # Already a parsed media object
+            except (json.JSONDecodeError, TypeError):
+                pass
+            # TSV format: id\tname\tconcentration\tminflux\tmaxflux
+            lines = raw.strip().split("\n")
+            for line in lines[1:]:
+                cols = line.split("\t")
+                if len(cols) >= 5:
+                    compounds.append({
+                        "id": cols[0],
+                        "compound_id": cols[0],
+                        "name": cols[1],
+                        "compound_name": cols[1],
+                        "concentration": float(cols[2]) if cols[2] else 0.001,
+                        "minFlux": float(cols[3]) if cols[3] else -100,
+                        "maxFlux": float(cols[4]) if cols[4] else 100,
+                    })
+        elif isinstance(raw, dict):
+            return raw
+
+        media_name = ref.rstrip("/").split("/")[-1]
+        # Extract flags from workspace metadata
+        meta_dict = metadata[7] if len(metadata) > 7 and isinstance(metadata[7], dict) else {}
+        return {
+            "id": media_name,
+            "name": media_name,
+            "compounds": compounds,
+            "isDefined": meta_dict.get("isDefined", meta_dict.get("is_defined")),
+            "isMinimal": meta_dict.get("isMinimal", meta_dict.get("is_minimal")),
+        }
     except WorkspaceError as e:
         raise HTTPException(status_code=_ws_status(e), detail=f"Workspace error: {e.message}")

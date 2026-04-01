@@ -111,22 +111,72 @@ def _patch_model_for_builder(model_obj: dict) -> dict:
 def _load_media(media_ref: str, token: str):
     """Load media from workspace and convert to MSMedia object.
 
-    Retries up to 3 times on transient 500 errors since KBUtilLib's
-    workspace client has no built-in retry logic.
+    Uses the storage service (our API proxy) rather than PatricWSUtils
+    directly, because the old workspace API sometimes returns empty data
+    for public media while our proxy handles it correctly.
     """
-    import time
-    from kbutillib import PatricWSUtils
-    kwargs = _init_kwargs(token)
-    ws_utils = PatricWSUtils(**kwargs)
-    for attempt in range(3):
+    from modelseed_api.services.storage_factory import get_storage_service
+    from modelseedpy.core.msmedia import MSMedia, MediaCompound
+
+    ws = get_storage_service(token)
+    result = ws.get({"objects": [media_ref]})
+    if not result or not result[0]:
+        raise ValueError(f"Media not found: {media_ref}")
+
+    raw = result[0][1] if len(result[0]) > 1 else ""
+
+    # Handle Shock URLs
+    if isinstance(raw, str) and raw.startswith("http") and "shock" in raw:
+        import requests as _req
+        resp = _req.get(
+            raw.rstrip("/") + "?download",
+            headers={"Authorization": f"OAuth {token}"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        raw = resp.text
+
+    # Parse media (JSON or TSV format)
+    media_compounds = []
+    if isinstance(raw, str):
         try:
-            return ws_utils.get_media(media_ref, as_msmedia=True)
-        except Exception as e:
-            if attempt < 2 and "500" in str(e):
-                logger.warning("Media load failed (attempt %d/3), retrying: %s", attempt + 1, e)
-                time.sleep(2 * (attempt + 1))
-            else:
-                raise
+            obj = json.loads(raw)
+            if isinstance(obj, dict):
+                media_compounds = obj.get("mediacompounds", [])
+        except (json.JSONDecodeError, TypeError):
+            # TSV format: id\tname\tconcentration\tminflux\tmaxflux
+            lines = raw.strip().split("\n")
+            for line in lines[1:]:
+                cols = line.split("\t")
+                if len(cols) >= 5:
+                    media_compounds.append({
+                        "compound_ref": "~/compounds/" + cols[0],
+                        "concentration": float(cols[2]) if cols[2] else 0.001,
+                        "minFlux": float(cols[3]) if cols[3] else -100,
+                        "maxFlux": float(cols[4]) if cols[4] else 100,
+                    })
+    elif isinstance(raw, dict):
+        media_compounds = raw.get("mediacompounds", [])
+
+    if not media_compounds:
+        raise ValueError(f"No media compounds found in {media_ref}")
+
+    # Convert to MSMedia
+    media_name = media_ref.rstrip("/").split("/")[-1]
+    ms_media = MSMedia(media_name, name=media_name)
+    for mc in media_compounds:
+        cpd_id = mc.get("compound_ref", "").split("/")[-1] if "compound_ref" in mc else mc.get("id", "")
+        if cpd_id:
+            ms_media.mediacompounds.append(
+                MediaCompound(
+                    cpd_id,
+                    -1 * mc.get("maxFlux", 100),
+                    -1 * mc.get("minFlux", -100),
+                    concentration=mc.get("concentration", 0.001),
+                )
+            )
+    logger.info("Loaded media %s: %d compounds", media_ref, len(ms_media.mediacompounds))
+    return ms_media
 
 
 def _resolve_media_ref(media_ref: str) -> str | None:

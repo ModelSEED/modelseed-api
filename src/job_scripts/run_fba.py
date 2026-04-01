@@ -123,6 +123,30 @@ def main():
                 print(f"Warning: could not save cobra_model: {_save_err}")
 
             print(f"Loaded model via FBAModelBuilder (fallback)")
+        else:
+            # Still need model_obj for saving FBA study back to model
+            model_path = f"{model_ref}/model"
+            result = ws.get({"objects": [model_path]})
+            if not result or len(result) == 0:
+                raise ValueError(f"Model not found: {model_ref}")
+            raw_data = result[0][1] if len(result[0]) > 1 else "{}"
+            if isinstance(raw_data, str):
+                if raw_data.startswith("http") and "shock" in raw_data:
+                    import requests as _req
+                    resp = _req.get(
+                        raw_data.rstrip("/") + "?download",
+                        headers={"Authorization": f"OAuth {args.token}"},
+                        timeout=60,
+                    )
+                    resp.raise_for_status()
+                    model_obj = resp.json()
+                else:
+                    model_obj = json.loads(raw_data)
+            elif isinstance(raw_data, dict):
+                model_obj = raw_data
+            else:
+                model_obj = {}
+            print(f"Loaded model_obj for FBA study save-back")
 
         # Load and apply media constraints if specified
         def _resolve_media(ref):
@@ -135,35 +159,56 @@ def main():
         ws_media_path = _resolve_media(media_ref)
         if ws_media_path:
             update_job(job_file, {"progress": "Loading media..."})
-            import os, time
-            os.environ.setdefault("KB_AUTH_TOKEN", "unused")
-            from kbutillib import PatricWSUtils
-            ws_utils = PatricWSUtils(
-                config_file=False, token_file=None, kbase_token_file=None,
-                token={"patric": args.token, "kbase": "unused"},
-            )
-            ms_media = None
-            for attempt in range(3):
+            # Load media through our storage service (not PatricWSUtils)
+            # to avoid issues with the old workspace API returning empty data
+            media_result = ws.get({"objects": [ws_media_path]})
+            if not media_result or not media_result[0]:
+                raise ValueError(f"Media not found: {ws_media_path}")
+            media_raw = media_result[0][1] if len(media_result[0]) > 1 else ""
+            if isinstance(media_raw, str) and media_raw.startswith("http") and "shock" in media_raw:
+                import requests as _req
+                resp = _req.get(
+                    media_raw.rstrip("/") + "?download",
+                    headers={"Authorization": f"OAuth {args.token}"},
+                    timeout=60,
+                )
+                resp.raise_for_status()
+                media_raw = resp.text
+            # Parse media (TSV or JSON)
+            media_compounds = []
+            if isinstance(media_raw, str):
                 try:
-                    ms_media = ws_utils.get_media(ws_media_path, as_msmedia=True)
-                    break
-                except Exception as _me:
-                    if attempt < 2 and "500" in str(_me):
-                        time.sleep(2 * (attempt + 1))
-                    else:
-                        raise
-            if ms_media:
+                    media_obj = json.loads(media_raw)
+                    if isinstance(media_obj, dict):
+                        media_compounds = media_obj.get("mediacompounds", [])
+                except (json.JSONDecodeError, TypeError):
+                    # TSV format: id\tname\tconcentration\tminflux\tmaxflux
+                    lines = media_raw.strip().split("\n")
+                    for line in lines[1:]:
+                        cols = line.split("\t")
+                        if len(cols) >= 5:
+                            media_compounds.append({
+                                "id": cols[0],
+                                "maxFlux": float(cols[4]) if cols[4] else 100,
+                            })
+            elif isinstance(media_raw, dict):
+                media_compounds = media_raw.get("mediacompounds", [])
+
+            if media_compounds:
                 rxn_ids = {r.id for r in cobra_model.reactions}
                 medium = {}
-                for cpd in ms_media.mediacompounds:
-                    exc_rxn_id = f"EX_{cpd.id}_e0"
+                for mc in media_compounds:
+                    cpd_id = mc.get("id") or mc.get("compound_ref", "").split("/")[-1]
+                    exc_rxn_id = f"EX_{cpd_id}_e0"
                     if exc_rxn_id in rxn_ids:
-                        medium[exc_rxn_id] = cpd.maxFlux or 1000.0
+                        medium[exc_rxn_id] = mc.get("maxFlux", 100) or 1000.0
                 if medium:
                     cobra_model.medium = medium
                     print(f"Applied media: {len(medium)} exchange reactions open")
                 else:
                     print(f"Warning: media had no matching exchange reactions")
+            else:
+                print(f"Warning: could not parse media compounds from {ws_media_path}")
 
         # Run FBA
         update_job(job_file, {"progress": "Running FBA..."})
