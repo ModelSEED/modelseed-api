@@ -245,6 +245,7 @@ def reconstruct(
     self,
     token: str,
     genome: str = "",
+    genome_fasta: str | None = None,
     template_type: str = "gn",
     atp_safe: bool = True,
     gapfill: bool = False,
@@ -254,9 +255,11 @@ def reconstruct(
     genome_id: str = "",
     media_ref: str | None = None,
 ):
-    """Build a metabolic model from a BV-BRC genome.
+    """Build a metabolic model from a BV-BRC genome or protein FASTA.
 
     Mirrors src/job_scripts/reconstruct.py for full parity.
+    When genome_fasta is provided, uses ModelSEEDpy MSBuilder directly
+    (RAST annotation + model build) instead of the BV-BRC API pipeline.
     """
     # Resolve parameter aliases
     genome_id = genome or genome_id
@@ -267,47 +270,85 @@ def reconstruct(
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
 
-    from kbutillib import BVBRCUtils, MSReconstructionUtils
-
-    kwargs = _init_kwargs(token)
-
-    # Step 1: Fetch genome from BV-BRC API
-    self.update_state(state="PROGRESS", meta={"status": "Fetching genome..."})
-    bvbrc = BVBRCUtils(**kwargs)
-    kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
-
-    # Extract organism/taxonomy info from genome
-    organism_name = kbase_genome.get("scientific_name", "")
-    taxonomy = kbase_genome.get("taxonomy", "")
-    domain = kbase_genome.get("domain", "")
-
-    # Step 2: Convert to MSGenome
-    self.update_state(state="PROGRESS", meta={"status": "Converting genome..."})
-    recon = MSReconstructionUtils(**kwargs)
-    genome = recon.get_msgenome_from_dict(kbase_genome)
-
     # Step 3: Load templates from local files
     self.update_state(state="PROGRESS", meta={"status": "Loading templates..."})
-    core_template = _load_template("core")
     gs_template_obj = _load_template(template_type)
 
-    # Step 4: Build model
-    self.update_state(state="PROGRESS", meta={"status": "Building model..."})
-    output, mdlutl = recon.build_metabolic_model(
-        genome=genome,
-        # WORKAROUND: classifier pickle files not available
-        genome_classifier=None,
-        core_template=core_template,
-        gs_template_obj=gs_template_obj,
-        gs_template=template_type,
-        atp_safe=atp_safe,
-    )
+    if genome_fasta:
+        # ── FASTA path: MSGenome + MSBuilder (no BV-BRC API) ──
+        self.update_state(state="PROGRESS", meta={"status": "Parsing FASTA..."})
+        from modelseedpy.core.msgenome import MSGenome, parse_fasta_str
+        from modelseedpy.core.msbuilder import MSBuilder
 
-    if mdlutl is None:
-        return {
-            "status": "skipped",
-            "comments": output.get("Comments", []),
+        ms_genome = MSGenome()
+        ms_genome.features += parse_fasta_str(genome_fasta)
+        if not ms_genome.features:
+            raise ValueError("No protein sequences found in genome_fasta")
+        logger.info("Parsed %d protein sequences from FASTA", len(ms_genome.features))
+
+        organism_name = genome_id  # Use the genome field as display name
+        taxonomy = ""
+        domain = ""
+
+        # MSBuilder handles RAST annotation + model build in one step
+        self.update_state(state="PROGRESS", meta={"status": "Annotating & building model..."})
+        model = MSBuilder.build_metabolic_model(
+            genome_id,
+            ms_genome,
+            template=gs_template_obj,
+            annotate_with_rast=True,
+            gapfill_model=False,  # We handle gapfill separately below
+        )
+
+        from modelseedpy.core.msmodelutl import MSModelUtil
+        mdlutl = MSModelUtil.get(model)
+        n_reactions = len(model.reactions)
+        n_genes = len(model.genes)
+        output = {
+            "Reactions": n_reactions,
+            "Model genes": n_genes,
+            "Class": template_type,
         }
+    else:
+        # ── BV-BRC path: KBUtilLib pipeline ──
+        from kbutillib import BVBRCUtils, MSReconstructionUtils
+
+        kwargs = _init_kwargs(token)
+
+        # Step 1: Fetch genome from BV-BRC API
+        self.update_state(state="PROGRESS", meta={"status": "Fetching genome..."})
+        bvbrc = BVBRCUtils(**kwargs)
+        kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
+
+        # Extract organism/taxonomy info from genome
+        organism_name = kbase_genome.get("scientific_name", "")
+        taxonomy = kbase_genome.get("taxonomy", "")
+        domain = kbase_genome.get("domain", "")
+
+        # Step 2: Convert to MSGenome
+        self.update_state(state="PROGRESS", meta={"status": "Converting genome..."})
+        recon = MSReconstructionUtils(**kwargs)
+        genome = recon.get_msgenome_from_dict(kbase_genome)
+
+        core_template = _load_template("core")
+
+        # Step 4: Build model
+        self.update_state(state="PROGRESS", meta={"status": "Building model..."})
+        output, mdlutl = recon.build_metabolic_model(
+            genome=genome,
+            # WORKAROUND: classifier pickle files not available
+            genome_classifier=None,
+            core_template=core_template,
+            gs_template_obj=gs_template_obj,
+            gs_template=template_type,
+            atp_safe=atp_safe,
+        )
+
+        if mdlutl is None:
+            return {
+                "status": "skipped",
+                "comments": output.get("Comments", []),
+            }
 
     # Step 5: Gapfill if requested
     gapfill_count = 0

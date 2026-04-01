@@ -69,16 +69,19 @@ async def reconstruct_model(
 
     Returns the job ID.
     """
+    params = {
+        "genome": request.genome,
+        "template_type": request.template_type,
+        "atp_safe": request.atp_safe,
+        "gapfill": request.gapfill,
+        "media": request.media,
+        "output_path": request.output_path,
+    }
+    if request.genome_fasta:
+        params["genome_fasta"] = request.genome_fasta
     job_id = _dispatcher.dispatch(
         app="ModelReconstruction",
-        parameters={
-            "genome": request.genome,
-            "template_type": request.template_type,
-            "atp_safe": request.atp_safe,
-            "gapfill": request.gapfill,
-            "media": request.media,
-            "output_path": request.output_path,
-        },
+        parameters=params,
         user=user.username,
         token=user.token,
     )

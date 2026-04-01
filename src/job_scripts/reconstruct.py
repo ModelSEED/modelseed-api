@@ -78,6 +78,7 @@ def main():
     # Strip source prefix if frontend sends "PATRIC:469009.4" or "RAST:12345"
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
+    genome_fasta = params.get("genome_fasta")
     template_type = params.get("template_type", "gn")
     atp_safe = params.get("atp_safe", True)
     do_gapfill = params.get("gapfill", False)
@@ -89,45 +90,14 @@ def main():
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from modelseed_api.config import settings
 
-        # Set up environment for KBUtilLib
-        # WORKAROUND 1/4: cobrakbase.KBaseAPI() requires non-empty KB_AUTH_TOKEN
-        # even when we don't use KBase. Fix: add template_source=git to KBUtilLib.
+        # WORKAROUND: cobrakbase.KBaseAPI() requires non-empty KB_AUTH_TOKEN
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
 
-        from kbutillib import BVBRCUtils, MSReconstructionUtils
-
-        init_kwargs = dict(
-            config_file=False,
-            token_file=None,
-            kbase_token_file=None,
-            token={"patric": args.token, "kbase": "unused"},
-            modelseed_path=settings.modelseed_db_path,
-            cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
-        )
-
-        # Step 1: Fetch genome from BV-BRC API
-        update_job(job_file, {"status": "in-progress", "progress": "Fetching genome..."})
-        bvbrc = BVBRCUtils(**init_kwargs)
-        kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
-
-        # Extract organism/taxonomy info from genome before conversion
-        organism_name = kbase_genome.get("scientific_name", "")
-        taxonomy = kbase_genome.get("taxonomy", "")
-        domain = kbase_genome.get("domain", "")
-
-        # Step 2: Convert to MSGenome
-        update_job(job_file, {"progress": "Converting genome..."})
-        recon = MSReconstructionUtils(**init_kwargs)
-        genome = recon.get_msgenome_from_dict(kbase_genome)
-
-        # Step 3: Load templates from local files
+        # Step 3: Load template
         update_job(job_file, {"progress": "Loading templates..."})
         from modelseedpy import MSTemplateBuilder
 
         templates_dir = settings.templates_path
-        with open(f"{templates_dir}/Core-V6.json") as f:
-            core_template = MSTemplateBuilder.from_dict(json.load(f)).build()
-
         template_files = {
             "gn": "GramNegModelTemplateV7.json",
             "gp": "GramPosModelTemplateV7.json",
@@ -138,19 +108,78 @@ def main():
         with open(f"{templates_dir}/{gs_filename}") as f:
             gs_template = MSTemplateBuilder.from_dict(json.load(f)).build()
 
-        # Step 4: Build model
-        update_job(job_file, {"progress": "Building model..."})
-        output, mdlutl = recon.build_metabolic_model(
-            genome=genome,
-            # WORKAROUND 4/4: MSGenomeClassifier needs pickle/features files
-            # not available in KBUtilLib repo. Pass None + explicit template_type.
-            # Fix: Chris to provide classifier data files or add them to KBUtilLib.
-            genome_classifier=None,
-            core_template=core_template,
-            gs_template_obj=gs_template,
-            gs_template=template_type,
-            atp_safe=atp_safe,
-        )
+        if genome_fasta:
+            # ── FASTA path: MSGenome + MSBuilder (no BV-BRC API) ──
+            update_job(job_file, {"progress": "Parsing FASTA..."})
+            from modelseedpy.core.msgenome import MSGenome, parse_fasta_str
+            from modelseedpy.core.msbuilder import MSBuilder
+
+            ms_genome = MSGenome()
+            ms_genome.features += parse_fasta_str(genome_fasta)
+            if not ms_genome.features:
+                raise ValueError("No protein sequences found in genome_fasta")
+            print(f"Parsed {len(ms_genome.features)} protein sequences from FASTA")
+
+            organism_name = genome_id
+            taxonomy = ""
+            domain = ""
+
+            update_job(job_file, {"progress": "Annotating & building model..."})
+            model = MSBuilder.build_metabolic_model(
+                genome_id,
+                ms_genome,
+                template=gs_template,
+                annotate_with_rast=True,
+                gapfill_model=False,
+            )
+
+            from modelseedpy.core.msmodelutl import MSModelUtil
+            mdlutl = MSModelUtil.get(model)
+            output = {
+                "Reactions": len(model.reactions),
+                "Model genes": len(model.genes),
+                "Class": template_type,
+            }
+        else:
+            # ── BV-BRC path: KBUtilLib pipeline ──
+            from kbutillib import BVBRCUtils, MSReconstructionUtils
+
+            init_kwargs = dict(
+                config_file=False,
+                token_file=None,
+                kbase_token_file=None,
+                token={"patric": args.token, "kbase": "unused"},
+                modelseed_path=settings.modelseed_db_path,
+                cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
+            )
+
+            # Step 1: Fetch genome from BV-BRC API
+            update_job(job_file, {"status": "in-progress", "progress": "Fetching genome..."})
+            bvbrc = BVBRCUtils(**init_kwargs)
+            kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
+
+            organism_name = kbase_genome.get("scientific_name", "")
+            taxonomy = kbase_genome.get("taxonomy", "")
+            domain = kbase_genome.get("domain", "")
+
+            # Step 2: Convert to MSGenome
+            update_job(job_file, {"progress": "Converting genome..."})
+            recon = MSReconstructionUtils(**init_kwargs)
+            genome = recon.get_msgenome_from_dict(kbase_genome)
+
+            with open(f"{templates_dir}/Core-V6.json") as f:
+                core_template = MSTemplateBuilder.from_dict(json.load(f)).build()
+
+            # Step 4: Build model
+            update_job(job_file, {"progress": "Building model..."})
+            output, mdlutl = recon.build_metabolic_model(
+                genome=genome,
+                genome_classifier=None,
+                core_template=core_template,
+                gs_template_obj=gs_template,
+                gs_template=template_type,
+                atp_safe=atp_safe,
+            )
 
         if mdlutl is None:
             update_job(job_file, {
