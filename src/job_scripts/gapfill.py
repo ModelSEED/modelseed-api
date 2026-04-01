@@ -126,27 +126,67 @@ def main():
         ws_media_path = _resolve_media(media_ref)
         if ws_media_path:
             update_job(job_file, {"progress": "Loading media..."})
-            from kbutillib import PatricWSUtils
-            ws_utils = PatricWSUtils(
-                config_file=False,
-                token_file=None,
-                kbase_token_file=None,
-                token={"patric": args.token, "kbase": "unused"},
-                modelseed_path=settings.modelseed_db_path,
-                cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
-            )
-            # Retry media loading — KBUtilLib's workspace client has no retry
-            import time
-            for _attempt in range(3):
+            from modelseedpy.core.msmedia import MediaCompound
+
+            # Load media through our storage service (not PatricWSUtils)
+            # to avoid issues with the old workspace API returning empty data
+            media_result = ws.get({"objects": [ws_media_path]})
+            if not media_result or not media_result[0]:
+                raise ValueError(f"No data found for media at {ws_media_path}")
+            media_raw = media_result[0][1] if len(media_result[0]) > 1 else ""
+
+            # Handle Shock URLs
+            if isinstance(media_raw, str) and media_raw.startswith("http") and "shock" in media_raw:
+                import requests as _req
+                resp = _req.get(
+                    media_raw.rstrip("/") + "?download",
+                    headers={"Authorization": f"OAuth {args.token}"},
+                    timeout=60,
+                )
+                resp.raise_for_status()
+                media_raw = resp.text
+
+            # Parse media (JSON or TSV format)
+            media_compounds = []
+            if isinstance(media_raw, str):
                 try:
-                    ms_media = ws_utils.get_media(ws_media_path, as_msmedia=True)
-                    break
-                except Exception as _e:
-                    if _attempt < 2 and "500" in str(_e):
-                        print(f"Media load failed (attempt {_attempt + 1}/3), retrying: {_e}")
-                        time.sleep(2 * (_attempt + 1))
-                    else:
-                        raise
+                    media_obj = json.loads(media_raw)
+                    if isinstance(media_obj, dict):
+                        media_compounds = media_obj.get("mediacompounds", [])
+                except (json.JSONDecodeError, TypeError):
+                    # TSV format: id\tname\tconcentration\tminflux\tmaxflux
+                    lines = media_raw.strip().split("\n")
+                    for line in lines[1:]:
+                        cols = line.split("\t")
+                        if len(cols) >= 5:
+                            media_compounds.append({
+                                "compound_ref": "~/compounds/" + cols[0],
+                                "concentration": float(cols[2]) if cols[2] else 0.001,
+                                "minFlux": float(cols[3]) if cols[3] else -100,
+                                "maxFlux": float(cols[4]) if cols[4] else 100,
+                            })
+            elif isinstance(media_raw, dict):
+                media_compounds = media_raw.get("mediacompounds", [])
+
+            if not media_compounds:
+                raise ValueError(f"No media compounds found in {ws_media_path}")
+
+            # Convert to MSMedia object
+            from modelseedpy.core.msmedia import MSMedia as _MSMedia
+            media_name = ws_media_path.rstrip("/").split("/")[-1]
+            ms_media = _MSMedia(media_name, name=media_name)
+            for mc in media_compounds:
+                cpd_id = mc.get("compound_ref", "").split("/")[-1] if "compound_ref" in mc else mc.get("id", "")
+                if cpd_id:
+                    ms_media.mediacompounds.append(
+                        MediaCompound(
+                            cpd_id,
+                            -1 * mc.get("maxFlux", 100),
+                            -1 * mc.get("minFlux", -100),
+                            concentration=mc.get("concentration", 0.001),
+                        )
+                    )
+            print(f"Loaded media {media_name}: {len(ms_media.mediacompounds)} compounds")
 
         # Step 5: Run gapfilling
         update_job(job_file, {"progress": "Running gapfilling..."})
