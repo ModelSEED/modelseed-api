@@ -246,6 +246,14 @@ def main():
         # Step 6: Save gapfilled model back to workspace
         if solutions_count > 0:
             update_job(job_file, {"progress": "Saving gapfilled model..."})
+
+            # If fba_model came from cobra.io (not FBAModelBuilder), it
+            # won't have get_data(). Convert back to workspace format.
+            if not hasattr(fba_model, 'get_data'):
+                from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
+                fba_model = CobraModelConverter(fba_model).build()
+                mdlutl = MSModelUtil.get(fba_model)
+
             ws_data = fba_model.get_data()
 
             # Persist gapfilling solution data to model object
