@@ -491,6 +491,12 @@ def gapfill(
     if solutions_count > 0:
         self.update_state(state="PROGRESS", meta={"status": "Saving model..."})
 
+        # Save cobra JSON BEFORE any lossy conversion — cobra.io
+        # roundtrip is lossless and preserves exchange bounds.
+        import cobra.io
+        fba_model.objective = "bio1"
+        cobra_json = json.dumps(cobra.io.model_to_dict(fba_model))
+
         # If fba_model came from cobra.io (not FBAModelBuilder), it
         # won't have get_data(). Convert back to workspace format.
         if not hasattr(fba_model, 'get_data'):
@@ -500,11 +506,6 @@ def gapfill(
 
         ws_data = fba_model.get_data()
         mdlutl.create_kb_gapfilling_data(ws_data)
-
-        # Save cobra JSON for FBA (workspace format loses exchange bounds)
-        import cobra.io
-        fba_model.objective = "bio1"
-        cobra_json = json.dumps(cobra.io.model_to_dict(fba_model))
 
         model_data = json.dumps(ws_data)
         ws.create({
