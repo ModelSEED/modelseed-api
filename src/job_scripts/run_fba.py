@@ -64,7 +64,11 @@ def main():
     # Mark as in-progress
     update_job(job_file, {"status": "in-progress", "start_time": now()})
 
-    params = json.loads(args.params)
+    # Support @filename for large params
+    if args.params.startswith("@"):
+        params = json.loads(Path(args.params[1:]).read_text())
+    else:
+        params = json.loads(args.params)
     model_ref = params.get("model", "")
     media_ref = params.get("media")
 

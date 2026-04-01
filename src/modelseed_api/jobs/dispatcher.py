@@ -119,6 +119,17 @@ class JobDispatcher:
         log_dir = Path(settings.job_store_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"{job_id}.log"
+
+        params_json = json.dumps(parameters)
+        # Write large params to a file to avoid OS argument-list-too-long
+        # (e.g. genome_fasta can be >1MB)
+        if len(params_json) > 100_000:
+            params_file = log_dir / f"{job_id}.params.json"
+            params_file.write_text(params_json)
+            params_arg = f"@{params_file}"
+        else:
+            params_arg = params_json
+
         try:
             subprocess.Popen(
                 [
@@ -126,7 +137,7 @@ class JobDispatcher:
                     str(script_path),
                     "--job-id", job_id,
                     "--token", token,
-                    "--params", json.dumps(parameters),
+                    "--params", params_arg,
                     "--job-store-dir", settings.job_store_dir,
                 ],
                 cwd=str(project_root),
