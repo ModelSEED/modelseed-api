@@ -1105,11 +1105,47 @@ class TestRunner:
         )
         return f"PIPELINE OK: {fba_id} objective={obj_val}"
 
-    def test_pipeline_fba_glucose(self):
-        """Step 4: FBA with Carbon-D-Glucose media → objective > 0 (different from Complete)."""
+    def test_pipeline_gapfill_glucose(self):
+        """Step 4: Gapfill for glucose media (adds biosynthetic pathways)."""
         model_ref = getattr(self, "_pipeline_model_ref", None)
         if not model_ref or not getattr(self, "_pipeline_gapfilled", False):
             return "skipped (no gapfilled model from pipeline)"
+
+        r = self.post("/api/jobs/gapfill", {
+            "model": model_ref,
+            "template_type": "gp",
+            "media": "Carbon-D-Glucose",
+        })
+        assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
+        job_id = extract_job_id(r.json())
+        assert job_id, f"could not extract job_id"
+
+        status, job = poll_job(self, job_id, max_seconds=600)
+
+        if status == "timeout":
+            return f"gapfill job {job_id[:8]}... timeout"
+        if status == "failed":
+            error = job.get("error", "unknown")
+            raise AssertionError(f"Glucose gapfill failed: {error}")
+
+        result = job.get("result", {})
+        solutions = result.get("solutions_count", 0)
+        added = result.get("added_reactions", 0)
+        added_ids = result.get("added_reaction_ids", [])
+
+        assert solutions > 0, (
+            f"Gapfill for glucose found 0 solutions — model can't be made "
+            f"to grow on glucose media"
+        )
+        self._pipeline_glucose_gapfilled = True
+        return (f"{solutions} solution(s), {added} reactions added"
+                + (f" ({', '.join(added_ids[:5])})" if added_ids else ""))
+
+    def test_pipeline_fba_glucose(self):
+        """Step 5: FBA with glucose media after glucose gapfill → objective > 0."""
+        model_ref = getattr(self, "_pipeline_model_ref", None)
+        if not model_ref or not getattr(self, "_pipeline_glucose_gapfilled", False):
+            return "skipped (model not gapfilled for glucose)"
 
         r = self.post("/api/jobs/fba", {
             "model": model_ref,
@@ -1128,7 +1164,12 @@ class TestRunner:
 
         result = job.get("result", {})
         obj_val = result.get("objective_value", 0)
-        return f"objective={obj_val} with Carbon-D-Glucose"
+
+        assert float(obj_val) > 0, (
+            f"FBA objective={obj_val} with glucose on glucose-gapfilled model — "
+            f"expected > 0"
+        )
+        return f"PIPELINE OK: objective={obj_val} with Carbon-D-Glucose"
 
     # ═══════════════════════════════════════════════════════════════════
     # 10d. RECONSTRUCT JOB — additional reconstruction tests
@@ -1396,6 +1437,7 @@ class TestRunner:
         self.run_test("pipeline_reconstruct", self.test_pipeline_reconstruct)
         self.run_test("pipeline_gapfill", self.test_pipeline_gapfill)
         self.run_test("pipeline_fba_complete", self.test_pipeline_fba_complete)
+        self.run_test("pipeline_gapfill_glucose", self.test_pipeline_gapfill_glucose)
         self.run_test("pipeline_fba_glucose", self.test_pipeline_fba_glucose)
 
         # 10d. Additional reconstruction tests
