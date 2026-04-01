@@ -10,23 +10,15 @@ import json
 import logging
 import os
 
+from modelseed_api.config import settings
 from modelseed_api.jobs.celery_app import app
 
 logger = logging.getLogger(__name__)
 
-# Template paths (v7.0 from ModelSEEDTemplates repo)
-TEMPLATES_DIR = os.getenv(
-    "MODELSEED_TEMPLATES_PATH",
-    "/Users/jplfaria/repos/ModelSEEDTemplates/templates/v7.0",
-)
-MODELSEED_DB_PATH = os.getenv(
-    "MODELSEED_DB_PATH",
-    "/Users/jplfaria/repos/ModelSEEDDatabase",
-)
-CB_ANNO_ONT_PATH = os.getenv(
-    "CB_ANNOTATION_ONTOLOGY_API_PATH",
-    "/Users/jplfaria/repos/cb_annotation_ontology_api",
-)
+# Paths from centralized config (set via MODELSEED_ env vars or .env file)
+TEMPLATES_DIR = settings.templates_path
+MODELSEED_DB_PATH = settings.modelseed_db_path
+CB_ANNO_ONT_PATH = settings.cb_annotation_ontology_api_path
 
 # Map template type to local file
 TEMPLATE_FILES = {
@@ -569,8 +561,13 @@ def gapfill(
         # won't have get_data(). Convert back to workspace format.
         if not hasattr(fba_model, 'get_data'):
             from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
+            # Preserve gapfilling data — the new MSModelUtil from the
+            # converted model would have an empty integrated_gapfillings list,
+            # losing the solution we just integrated.
+            old_integrated = mdlutl.integrated_gapfillings
             fba_model = CobraModelConverter(fba_model).build()
             mdlutl = MSModelUtil.get(fba_model)
+            mdlutl.integrated_gapfillings = old_integrated
 
         ws_data = fba_model.get_data()
         mdlutl.create_kb_gapfilling_data(ws_data)

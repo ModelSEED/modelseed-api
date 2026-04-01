@@ -12,17 +12,17 @@ Or use the worker() entry point:
 
 from __future__ import annotations
 
-import os
-
 from celery import Celery
 from kombu import Exchange, Queue
+
+from modelseed_api.config import settings
 
 QUEUE = "modelseed"
 
 app = Celery(
     QUEUE,
-    broker=os.getenv("CELERY_BROKER_URL", "redis://bioseed_redis:6379/10"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://bioseed_redis:6379/10"),
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
 )
 
 app.conf.update(

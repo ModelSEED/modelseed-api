@@ -185,7 +185,8 @@ def main():
                 return None
             if "/" in ref:
                 return ref
-            return f"/chenry/public/modelsupport/media/{ref}"
+            from modelseed_api.config import settings
+            return f"{settings.public_media_path}/{ref}"
 
         ws_media_path = _resolve_media(media_ref)
         if ws_media_path:

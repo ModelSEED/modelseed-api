@@ -288,8 +288,13 @@ def main():
             # won't have get_data(). Convert back to workspace format.
             if not hasattr(fba_model, 'get_data'):
                 from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
+                # Preserve gapfilling data — the new MSModelUtil from the
+                # converted model would have an empty integrated_gapfillings
+                # list, losing the solution we just integrated.
+                old_integrated = mdlutl.integrated_gapfillings
                 fba_model = CobraModelConverter(fba_model).build()
                 mdlutl = MSModelUtil.get(fba_model)
+                mdlutl.integrated_gapfillings = old_integrated
 
             ws_data = fba_model.get_data()
 
