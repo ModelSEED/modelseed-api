@@ -96,7 +96,31 @@ def _clean_reaction(rxn: dict) -> dict[str, Any]:
         "equation": rxn.get("equation"),
         "definition": rxn.get("definition"),
         "source": rxn.get("source"),
+        "pathways": _parse_pathways(rxn.get("pathways", [])),
     }
+
+
+def _parse_pathways(raw: list) -> list[dict]:
+    """Parse pathway strings from ModelSEEDDatabase into structured dicts.
+
+    Input format: ["MetaCyc: id1 (name1); id2 (name2)", "KEGG: rn00010 (Glycolysis)"]
+    Output: [{"source": "MetaCyc", "id": "id1", "name": "name1"}, ...]
+    """
+    result = []
+    for entry in (raw or []):
+        if ": " not in entry:
+            continue
+        source, rest = entry.split(": ", 1)
+        for part in rest.split("; "):
+            part = part.strip()
+            if " (" in part and part.endswith(")"):
+                pw_id, pw_name = part.rsplit(" (", 1)
+                pw_name = pw_name.rstrip(")")
+            else:
+                pw_id = part
+                pw_name = part
+            result.append({"source": source, "id": pw_id, "name": pw_name})
+    return result
 
 
 def get_compound(compound_id: str) -> Optional[dict]:
@@ -161,6 +185,24 @@ def search_reactions(query: str, limit: int = 50) -> list[dict]:
         if query_lower in rxn["id"].lower() or query_lower in name.lower():
             results.append(_clean_reaction(rxn))
     return results
+
+
+def get_pathway_map(reaction_ids: list[str]) -> dict[str, list[dict]]:
+    """Get parsed pathway data for a list of ModelSEED reaction IDs.
+
+    Returns {rxn_id: [{"source": ..., "id": ..., "name": ...}, ...]}.
+    Strips compartment suffixes (e.g. rxn00001_c -> rxn00001).
+    """
+    db = _get_db()
+    result = {}
+    for rxn_id in reaction_ids:
+        # Strip compartment suffix: rxn00001_c0 -> rxn00001, rxn00001_c -> rxn00001
+        base_id = rxn_id.rsplit("_", 1)[0] if "_" in rxn_id else rxn_id
+        if base_id in db["reactions"]:
+            pathways = _parse_pathways(db["reactions"][base_id].get("pathways", []))
+            if pathways:
+                result[rxn_id] = pathways
+    return result
 
 
 def get_stats() -> dict:

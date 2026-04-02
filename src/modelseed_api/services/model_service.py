@@ -438,6 +438,16 @@ class ModelService:
 
     def _format_model_data(self, ref: str, model_obj: dict) -> dict:
         """Format raw model object into ModelData shape."""
+        # Look up pathway data from biochemistry database
+        from modelseed_api.services import biochem_service
+
+        rxn_ids = []
+        for rxn in model_obj.get("modelreactions", []):
+            rxn_ref = rxn.get("reaction_ref", "")
+            base_rxn = rxn_ref.split("/")[-1] if "/" in rxn_ref else rxn.get("id", "")
+            rxn_ids.append(base_rxn)
+        pathway_map = biochem_service.get_pathway_map(rxn_ids)
+
         # Build compound ID→name lookup for equation synthesis and biomass
         cpd_name_map: dict[str, str] = {}
         for cpd in model_obj.get("modelcompounds", []):
@@ -481,6 +491,11 @@ class ModelService:
                     )
             gpr = " or ".join(gpr_parts) if len(gpr_parts) > 1 else (gpr_parts[0] if gpr_parts else "")
 
+            # Look up pathway data from biochem database
+            rxn_ref = rxn.get("reaction_ref", "")
+            base_rxn = rxn_ref.split("/")[-1] if "/" in rxn_ref else rxn.get("id", "")
+            rxn_pathways = pathway_map.get(base_rxn, [])
+
             reactions.append(
                 {
                     "id": rxn.get("id", ""),
@@ -490,6 +505,7 @@ class ModelService:
                     "equation": equation,
                     "gpr": gpr,
                     "genes": rxn_genes,
+                    "pathways": rxn_pathways,
                 }
             )
 
@@ -548,6 +564,21 @@ class ModelService:
                 }
             )
 
+        # Build pathways summary: group reactions by pathway
+        pathway_reactions: dict[str, dict] = {}
+        for rxn_dict in reactions:
+            for pw in rxn_dict.get("pathways", []):
+                key = f"{pw['source']}:{pw['id']}"
+                if key not in pathway_reactions:
+                    pathway_reactions[key] = {
+                        "source": pw["source"],
+                        "id": pw["id"],
+                        "name": pw["name"],
+                        "reactions": [],
+                    }
+                pathway_reactions[key]["reactions"].append(rxn_dict["id"])
+        pathways = sorted(pathway_reactions.values(), key=lambda p: p["name"])
+
         return {
             "ref": ref,
             "reactions": reactions,
@@ -555,6 +586,7 @@ class ModelService:
             "genes": genes,
             "compartments": compartments,
             "biomasses": biomasses,
+            "pathways": pathways,
         }
 
     def delete_model(self, model_ref: str) -> Any:
