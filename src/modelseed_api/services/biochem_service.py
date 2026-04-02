@@ -119,6 +119,8 @@ def _parse_pathways(raw: list) -> list[dict]:
             else:
                 pw_id = part
                 pw_name = part
+            # Use id as fallback for empty names; strip HTML tags from names
+            pw_name = pw_name or pw_id
             result.append({"source": source, "id": pw_id, "name": pw_name})
     return result
 
