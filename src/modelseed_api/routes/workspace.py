@@ -87,9 +87,23 @@ async def workspace_copy(
     request: WSCopyRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> Any:
-    """Copy or move workspace objects."""
+    """Copy or move workspace objects.
+
+    When recursive=True, uses manual copy that fetches and re-creates
+    inner objects. PATRIC workspace copy doesn't reliably copy
+    Shock-stored data within folders.
+    """
     ws = _get_ws(user)
     try:
+        if request.recursive and request.objects:
+            from modelseed_api.services.model_service import ModelService
+            svc = ModelService(user.token)
+            results = []
+            for pair in request.objects:
+                if len(pair) >= 2:
+                    svc.copy_model(pair[0], pair[1])
+                    results.append({"copied": f"{pair[0]} -> {pair[1]}"})
+            return results
         return ws.copy(request.model_dump(exclude_none=True))
     except WorkspaceError as e:
         _handle_ws_error(e)
