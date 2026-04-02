@@ -26,22 +26,18 @@ class AuthUser:
 def _extract_username(token: str) -> str:
     """Extract username from a PATRIC or RAST token.
 
-    PATRIC tokens: 'un=username|tokenid=...|...'
+    PATRIC tokens: 'un=username|tokenid=...|...'  (username may include @patricbrc.org)
     RAST tokens: contain 'rast.nmpdr.org', format varies but includes 'un=username|...'
 
-    Some tokens include '@patricbrc.org' in the username field
-    (e.g. 'un=seaver@patricbrc.org'), but workspace paths use the bare
-    username ('/seaver/modelseed/'). Strip the suffix to avoid path mismatches.
+    IMPORTANT: Do NOT strip @patricbrc.org from the username. PATRIC and RAST
+    tokens access different workspace namespaces:
+      - RAST token (un=jplfaria) → workspace path /jplfaria/modelseed/
+      - PATRIC token (un=jplfaria@patricbrc.org) → /jplfaria@patricbrc.org/modelseed/
+    The username must match the workspace namespace exactly.
     """
     for part in token.split("|"):
         if part.startswith("un="):
-            username = part[3:]
-            # Strip email-style suffixes — workspace paths use bare usernames
-            for suffix in ("@patricbrc.org", "@rast.nmpdr.org"):
-                if username.endswith(suffix):
-                    username = username[: -len(suffix)]
-                    break
-            return username
+            return part[3:]
     # Fallback: try to extract from other formats
     raise HTTPException(
         status_code=401,
