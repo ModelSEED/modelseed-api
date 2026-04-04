@@ -702,33 +702,98 @@ class ModelService:
         for gf in model_obj.get("gapfillings", []):
             gfid = gf.get("id", "")
 
-            # Try legacy format first (gapfillingSolutions array)
-            solutions = []
-            for sol in gf.get("gapfillingSolutions", gf.get("solutions", [])):
-                sol_rxns = []
-                for rxn in sol.get("gapfillingSolutionReactions", sol.get("reactions", [])):
-                    sol_rxns.append({
-                        "reaction": rxn.get("reaction_ref", rxn.get("reaction", "")),
-                        "direction": rxn.get("direction", "="),
-                        "compartment": rxn.get("compartment_ref", rxn.get("compartment", "")),
-                    })
-                solutions.append(sol_rxns)
+            # Resolve the gapfill ref path. Old models use fba_ref like
+            # "ModelName/gapfilling/gf.0||" (separate workspace object).
+            # New models don't store separate objects.
+            fba_ref = gf.get("fba_ref", "").rstrip("|").rstrip("/")
+            if fba_ref:
+                # fba_ref is relative: "ModelName/gapfilling/gf.0"
+                # Convert to absolute: model_ref parent + fba_ref
+                parent = model_ref.rsplit("/", 1)[0] if "/" in model_ref else ""
+                gf_ref = f"{parent}/{fba_ref}" if parent else fba_ref
+            else:
+                gf_ref = gf.get("ref", f"{model_ref}/gapfilling/{gfid}")
+
+            # Try inline solutions first (gapfillingSolutions array on model)
+            solutions = self._parse_gapfill_solutions(gf)
+
+            # Try solutiondata field (stringified JSON in some formats)
+            if not solutions and gf.get("solutiondata"):
+                try:
+                    sd = gf["solutiondata"]
+                    if isinstance(sd, str):
+                        sd = json.loads(sd)
+                    if isinstance(sd, list):
+                        for sol in sd:
+                            solutions.append(self._parse_solution_reactions(sol))
+                    elif isinstance(sd, dict):
+                        solutions.append(self._parse_solution_reactions(sd))
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
             # Fall back to modelreactions gapfill_data (ModelSEEDpy format)
             if not solutions and gfid in gf_rxn_index:
                 solutions = [gf_rxn_index[gfid]]
 
+            # Last resort: fetch solution from separate workspace object
+            if not solutions and fba_ref:
+                solutions = self._fetch_gapfill_solutions(gf_ref)
+
             gapfillings.append({
                 "rundate": gf.get("rundate", ""),
                 "id": gfid,
-                "ref": gf.get("ref", f"{model_ref}/gapfill.{gfid}"),
-                "media_ref": gf.get("media_ref", ""),
+                "ref": gf_ref,
+                "media_ref": gf.get("media_ref", "").rstrip("|"),
                 "integrated": gf.get("integrated", False),
                 "integrated_solution": gf.get("integrated_solution", 0),
                 "solution_reactions": solutions,
             })
 
         return gapfillings
+
+    @staticmethod
+    def _parse_gapfill_solutions(gf: dict) -> list[list[dict]]:
+        """Parse inline gapfillingSolutions from a gapfilling entry."""
+        solutions = []
+        for sol in gf.get("gapfillingSolutions", gf.get("solutions", [])):
+            solutions.append(ModelService._parse_solution_reactions(sol))
+        return solutions
+
+    @staticmethod
+    def _parse_solution_reactions(sol: dict) -> list[dict]:
+        """Parse reactions from a single gapfill solution dict."""
+        sol_rxns = []
+        for rxn in sol.get("gapfillingSolutionReactions", sol.get("reactions", [])):
+            # reaction_ref can be full path or template ref like
+            # "~/fbamodel/template/reactions/id/rxn00062"
+            rxn_ref = rxn.get("reaction_ref", rxn.get("reaction", ""))
+            rxn_id = rxn_ref.split("/")[-1] if "/" in rxn_ref else rxn_ref
+            # Add compartment suffix if compartmentIndex is present
+            cpt_ref = rxn.get("compartment_ref", rxn.get("compartment", ""))
+            cpt = cpt_ref.split("/")[-1] if "/" in cpt_ref else cpt_ref
+            cpt_idx = rxn.get("compartmentIndex", 0)
+            if cpt and cpt_idx is not None and not rxn_id.endswith(f"_{cpt}{cpt_idx}"):
+                rxn_id = f"{rxn_id}_{cpt}{cpt_idx}"
+            sol_rxns.append({
+                "reaction": rxn_id,
+                "direction": rxn.get("direction", "="),
+                "compartment": f"{cpt}{cpt_idx}" if cpt else "",
+            })
+        return sol_rxns
+
+    def _fetch_gapfill_solutions(self, gf_ref: str) -> list[list[dict]]:
+        """Fetch gapfill solution data from a separate workspace object."""
+        try:
+            result = self.ws.get({"objects": [gf_ref]})
+            gf_obj = self._parse_ws_data(result)
+            if not gf_obj:
+                return []
+            solutions = []
+            for sol in gf_obj.get("gapfillingSolutions", []):
+                solutions.append(self._parse_solution_reactions(sol))
+            return solutions
+        except Exception:
+            return []
 
     def manage_gapfill_solutions(
         self, model_ref: str, commands: dict[str, str], selected_solutions: dict | None = None
