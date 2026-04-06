@@ -127,19 +127,20 @@ Most endpoints require a PATRIC token in the `Authorization` header (not needed 
 |--------|------|------|-------------|
 | `GET` | `/api/health` | No | Health check — returns `{"status":"ok","version":"0.1.0"}` |
 
-### Models (`/api/models`) — 10 endpoints
+### Models (`/api/models`) — 11 endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/models` | List user's models (with organism, taxonomy, domain metadata) |
-| `GET` | `/api/models/data?ref=` | Full model detail: reactions, compounds, genes, compartments, biomasses, organism info |
+| `GET` | `/api/models/data?ref=` | Full model detail: reactions, compounds, genes, compartments, biomasses, pathways, organism info |
 | `POST` | `/api/models/edit` | Atomic model editing: add/remove/modify reactions, compounds, and biomass |
 | `POST` | `/api/models/copy` | Copy a model to a new workspace path |
 | `DELETE` | `/api/models?ref=` | Delete a model from workspace |
-| `GET` | `/api/models/export?ref=&format=` | Export as `json`, `sbml`, or `cobra-json` (SBML returns XML attachment) |
+| `GET` | `/api/models/export?ref=&format=` | Export as `json`, `sbml`, `cobra-json` (or alias `cobrapy`). SBML returns XML attachment |
 | `GET` | `/api/models/gapfills?ref=` | List gapfill solutions for a model |
 | `POST` | `/api/models/gapfills/manage` | Integrate, unintegrate, or delete gapfill solutions |
 | `GET` | `/api/models/fba?ref=` | List FBA studies for a model |
+| `GET` | `/api/models/fba/data?ref=&fba_id=` | Get full FBA result including reaction flux values |
 | `GET` | `/api/models/edits?ref=` | List edit history (stub — returns `[]`) |
 
 ### Jobs (`/api/jobs`) — 6 endpoints
@@ -425,6 +426,7 @@ src/
       biochem.py              #   /api/biochem/*
       media.py                #   /api/media/*
       workspace.py            #   /api/workspace/*
+      rast.py                 #   /api/rast/*
     schemas/                  # Pydantic request/response models
     services/                 # Business logic
       storage_factory.py      #   Returns WorkspaceService or LocalStorageService
@@ -433,6 +435,7 @@ src/
       model_service.py        #   Model CRUD, gapfill management
       biochem_service.py      #   ModelSEEDDatabase queries
       export_service.py       #   SBML/CobraPy export
+      rast_service.py         #   Legacy RAST job listing (MySQL)
     jobs/                     # Job dispatch system
       dispatcher.py           #   Subprocess or Celery dispatch
       store.py                #   Job state (JSON files)
@@ -446,8 +449,13 @@ src/
     merge_models.py           # Model merging
 data/
   media/public/               # Bundled public media formulations (523 files)
+docs/
+  WORKAROUNDS.md              # Active workarounds with upstream status
+  API_ONBOARDING.md           # Onboarding guide for frontend developers
 tests/
+  conftest.py                 # Pytest fixtures
   test_live_integration.py    # Integration tests against live workspace
+  test_auth.py                # Auth dependency unit tests
 ```
 
 
@@ -460,18 +468,29 @@ All settings are loaded from environment variables with the `MODELSEED_` prefix,
 | `MODELSEED_HOST` | `0.0.0.0` | Server bind address |
 | `MODELSEED_PORT` | `8000` | Server port |
 | `MODELSEED_DEBUG` | `false` | Enable debug mode |
+| `MODELSEED_CORS_ORIGINS` | `["*"]` | Allowed CORS origins (JSON list) |
 | `MODELSEED_STORAGE_BACKEND` | `workspace` | Storage backend: `workspace` (PATRIC) or `local` (filesystem) |
 | `MODELSEED_LOCAL_DATA_DIR` | `~/.modelseed/data` | Local storage directory (only used when `storage_backend=local`) |
 | `MODELSEED_MODELSEED_DB_PATH` | (required) | Path to ModelSEEDDatabase repo |
 | `MODELSEED_TEMPLATES_PATH` | (required) | Path to ModelSEEDTemplates/templates/v7.0 |
 | `MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH` | (required) | Path to cb_annotation_ontology_api repo |
-| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL (only used when `storage_backend=workspace`) |
+| `MODELSEED_WORKSPACE_URL` | `https://p3.theseed.org/services/Workspace` | PATRIC workspace URL (workspace mode only) |
+| `MODELSEED_WORKSPACE_TIMEOUT` | `1800` | Workspace HTTP request timeout in seconds |
+| `MODELSEED_SHOCK_URL` | `https://p3.theseed.org/services/shock_api` | Shock file storage URL (workspace mode only) |
+| `MODELSEED_PUBLIC_MEDIA_PATH` | `/chenry/public/modelsupport/media` | Workspace path for public media formulations |
+| `MODELSEED_PUBLIC_PLANTS_PATH` | `/chenry/public/modelsupport/plantmodels` | Workspace path for public plant models |
+| `MODELSEED_RAST_AUTH_URL` | `https://rast.nmpdr.org/goauth/token` | RAST OAuth token endpoint |
+| `MODELSEED_PATRIC_AUTH_URL` | `https://user.patricbrc.org/authenticate` | PATRIC authentication endpoint |
+| `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
+| `MODELSEED_CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery Redis broker URL |
+| `MODELSEED_CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery Redis result backend URL |
+| `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
+| `MODELSEED_JOB_SCRIPTS_DIR` | `job_scripts` | Directory containing job script files |
 | `MODELSEED_RAST_DB_HOST` | (empty = disabled) | RAST MySQL database host (e.g. `arborvitae.cels.anl.gov`) |
+| `MODELSEED_RAST_DB_PORT` | `3306` | RAST MySQL database port |
 | `MODELSEED_RAST_DB_USER` | (empty) | RAST database username |
 | `MODELSEED_RAST_DB_PASSWORD` | (empty) | RAST database password |
 | `MODELSEED_RAST_DB_NAME` | `RastProdJobCache` | RAST database name |
-| `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
-| `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
 
 
 ## Docker-Specific Challenges
@@ -505,7 +524,8 @@ The build context is the **parent directory** containing all sibling repos (not 
 - CI/CD pipeline
 - Integration tests against dev workspace
 - Structured logging
-- Celery+Redis deployment on poplar (tasks are ready, infrastructure needed)
+- ~~Celery task parity with job scripts~~ (done — tasks connect to existing `redis://bioseed_redis:6379/10` broker, queue `modelseed`, Flower at `poplar:5555`)
+- Dedicated modelseed Celery worker process (currently uses shared worker pool)
 - Health check enhancements
 - Job store file locking for concurrent access
 
