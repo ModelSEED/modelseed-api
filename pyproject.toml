@@ -40,6 +40,12 @@ dev = [
 celery = [
     "celery[redis]>=5.3.0",
 ]
+mcp = [
+    "fastmcp>=2.0.0",
+]
+
+[project.scripts]
+modelseed-mcp = "modelseed_mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

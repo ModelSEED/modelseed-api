@@ -195,37 +195,131 @@ All workspace operations are POST-based proxies to the PATRIC Workspace service.
 
 ## Architecture
 
+This repo contains two interfaces to the same modeling engine:
+
 ```
-Browser (Demo dashboard or future Next.js frontend)
-    |
-    v
-FastAPI REST API (this repo, port 8000)
-    |
-    +-- /api/models/*     --+
-    +-- /api/workspace/*  --+--> Storage Factory
-    +-- /api/media/*      --+        |
-    |                           +----+----+
-    |                           |         |
-    |                       workspace   local
-    |                      (PATRIC WS) (filesystem)
-    |
-    +-- /api/biochem/*    --> Local ModelSEEDDatabase files
-    +-- /api/jobs/*       --> Job dispatch (subprocess or Celery)
-    |
-Job Scripts (src/job_scripts/)
-    |
-    +-- reconstruct.py ----> BVBRCUtils (fetch genome) + MSReconstructionUtils (build model)
-    +-- gapfill.py --------> FBAModelBuilder + MSGapfill + local templates
-    +-- run_fba.py --------> cobra.Model.optimize()
+                      ┌─────────────────────────────────────────────────┐
+                      │              Shared Service Layer               │
+                      │  biochem_service · ModelService · JobDispatcher │
+                      │  export_service · JobStore · storage_factory    │
+                      └──────────┬──────────────────────┬───────────────┘
+                                 │                      │
+                    ┌────────────┴────────┐   ┌────────┴──────────┐
+                    │   REST API (HTTP)   │   │   MCP Server      │
+                    │   modelseed_api     │   │   modelseed_mcp   │
+                    │   FastAPI + uvicorn │   │   FastMCP (stdio) │
+                    │   Port 8000        │   │   No network      │
+                    └────────────────────┘   └───────────────────┘
+                             │                        │
+                    Browser / Frontend         AI Assistants
+                    (PATRIC auth tokens)   (Claude, etc. — local mode)
 ```
+
+**REST API** (`modelseed_api`) — HTTP endpoints for browsers and frontends. Supports both PATRIC Workspace and local storage. Requires auth tokens for workspace mode.
+
+**MCP Server** (`modelseed_mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) interface for AI assistants (Claude Desktop, Claude Code, etc.). Runs in local storage mode only — no auth, no network dependencies. Calls the same service layer directly (no HTTP overhead).
+
+Both share the same core:
+- `biochem_service` — compound/reaction search and lookup
+- `ModelService` — model CRUD, gapfill management, FBA results
+- `JobDispatcher` + `JobStore` — async job dispatch and polling
+- `export_service` — SBML and CobraPy export
+- `storage_factory` — pluggable storage backend
 
 Key design decisions:
 
-- **Synchronous API** -- long-running operations are dispatched to external job scripts, not handled in-process
-- **Pluggable storage** -- a factory selects PATRIC Workspace (`storage_backend=workspace`) or local filesystem (`storage_backend=local`); both implement the same interface with identical 12-element metadata tuples
-- **Fully offline local mode** -- with `storage_backend=local`, no PATRIC account or network access is needed; models are stored as JSON files on disk, public media are bundled in `data/media/public/`
-- **Local templates** -- model templates are loaded from git repos on disk, not from KBase workspace
-- **No KBase dependency** -- runs entirely against BV-BRC/PATRIC APIs, no KBase connection needed
+- **Synchronous API** — long-running operations are dispatched to external job scripts, not handled in-process
+- **Pluggable storage** — a factory selects PATRIC Workspace (`storage_backend=workspace`) or local filesystem (`storage_backend=local`); both implement the same interface with identical 12-element metadata tuples
+- **Fully offline local mode** — with `storage_backend=local`, no PATRIC account or network access is needed; models are stored as JSON files on disk, public media are bundled in `data/media/public/`
+- **Local templates** — model templates are loaded from git repos on disk, not from KBase workspace
+- **No KBase dependency** — runs entirely against BV-BRC/PATRIC APIs, no KBase connection needed
+
+
+## MCP Server (AI Assistant Interface)
+
+The MCP server exposes ModelSEED tools to AI assistants via the [Model Context Protocol](https://modelcontextprotocol.io). It runs in **local storage mode only** — no PATRIC account, no auth tokens, no network dependencies beyond BV-BRC genome fetching.
+
+MCP tools call the same service layer as the REST API, but directly (no HTTP). This means zero overhead and identical behavior.
+
+### Running the MCP server
+
+```bash
+# As a module
+python -m modelseed_mcp
+
+# Or via console script (after pip install)
+modelseed-mcp
+```
+
+### Claude Desktop / Claude Code configuration
+
+```json
+{
+  "mcpServers": {
+    "modelseed": {
+      "command": "python",
+      "args": ["-m", "modelseed_mcp"],
+      "env": {
+        "MODELSEED_MODELSEED_DB_PATH": "/path/to/ModelSEEDDatabase",
+        "MODELSEED_TEMPLATES_PATH": "/path/to/ModelSEEDTemplates/templates/v7.0",
+        "MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH": "/path/to/cb_annotation_ontology_api"
+      }
+    }
+  }
+}
+```
+
+### MCP Tools (17 tools)
+
+#### Biochemistry (no auth) — search and look up compounds and reactions
+
+| Tool | Description |
+|------|-------------|
+| `search_compounds(query, limit?)` | Search by name or ID substring |
+| `search_reactions(query, limit?)` | Search by name or ID substring |
+| `get_compound(compound_id)` | Lookup by ID (single or comma-separated) |
+| `get_reaction(reaction_id)` | Lookup by ID (single or comma-separated) |
+
+#### Models — CRUD operations on local models
+
+| Tool | Description |
+|------|-------------|
+| `list_models()` | List all local models with summary stats |
+| `get_model(model_ref)` | Full model detail: reactions, compounds, genes, biomasses, pathways |
+| `delete_model(model_ref)` | Delete a model |
+| `copy_model(source, destination)` | Deep-copy a model |
+| `export_model(model_ref, format?)` | Export as SBML or CobraPy JSON |
+| `edit_model(model_ref, ...)` | Add/remove/modify reactions, compounds, biomasses |
+
+#### Media — browse bundled growth media formulations
+
+| Tool | Description |
+|------|-------------|
+| `list_media()` | List all available media with compound counts |
+| `get_media(media_name)` | Get compounds and flux bounds for a media |
+
+#### Async Jobs — model building, gapfilling, FBA
+
+| Tool | Description |
+|------|-------------|
+| `build_model(genome, ...)` | Build model from BV-BRC genome ID or protein FASTA |
+| `gapfill_model(model, media?, ...)` | Gapfill a model against a media condition |
+| `run_fba(model, media?, ...)` | Run flux balance analysis |
+| `merge_models(models, ...)` | Merge multiple models into a community model |
+| `check_job(job_id)` | Check job status and get results |
+
+Async tools dispatch jobs via subprocess and poll until completion (configurable timeout). Set `wait=False` to get the job ID immediately and poll manually with `check_job`.
+
+### API vs MCP — when to use which
+
+| | REST API | MCP Server |
+|---|---------|------------|
+| **Client** | Browsers, frontends, scripts | AI assistants (Claude, etc.) |
+| **Transport** | HTTP (port 8000) | stdio (Model Context Protocol) |
+| **Auth** | PATRIC tokens (workspace mode) | None (local mode only) |
+| **Storage** | Workspace or local | Local only |
+| **Use case** | Production web app, PATRIC integration | AI-driven modeling, local experimentation |
+| **Install** | `pip install -e ".[modeling]"` | `pip install -e ".[modeling,mcp]"` |
 
 
 ## Demo Dashboard (Development Only)
@@ -270,7 +364,8 @@ Core dependencies (see `pyproject.toml`):
 - `cobrakbase` -- KBase/cobra bridge for genome and model objects
 - `requests` -- HTTP client for workspace and BV-BRC API calls
 - `pydantic-settings` -- configuration management
-- `celery[redis]` -- job scheduling (production mode only)
+- `celery[redis]` — job scheduling (production mode only)
+- `fastmcp` — MCP server framework (optional, for AI assistant interface)
 
 
 ## Workarounds for KBase-Independent Operation
@@ -416,7 +511,7 @@ The dispatcher creates job records BEFORE sending to Celery to avoid race condit
 
 ```
 src/
-  modelseed_api/              # FastAPI application (the API)
+  modelseed_api/              # FastAPI application (REST API)
     main.py                   # App initialization, static file serving
     config.py                 # Settings (pydantic-settings, env vars)
     auth/dependencies.py      # PATRIC/RAST token extraction + local auth bypass
@@ -428,7 +523,7 @@ src/
       workspace.py            #   /api/workspace/*
       rast.py                 #   /api/rast/*
     schemas/                  # Pydantic request/response models
-    services/                 # Business logic
+    services/                 # Business logic (shared with MCP)
       storage_factory.py      #   Returns WorkspaceService or LocalStorageService
       workspace_service.py    #   PATRIC workspace proxy (remote)
       local_storage_service.py#   Filesystem storage backend (local)
@@ -436,12 +531,21 @@ src/
       biochem_service.py      #   ModelSEEDDatabase queries
       export_service.py       #   SBML/CobraPy export
       rast_service.py         #   Legacy RAST job listing (MySQL)
-    jobs/                     # Job dispatch system
+    jobs/                     # Job dispatch system (shared with MCP)
       dispatcher.py           #   Subprocess or Celery dispatch
       store.py                #   Job state (JSON files)
       celery_app.py           #   Celery configuration
       tasks.py                #   Celery task definitions
     static/index.html         # Demo dashboard (development only)
+  modelseed_mcp/              # MCP server (AI assistant interface)
+    __init__.py
+    __main__.py               # Entry point: python -m modelseed_mcp
+    server.py                 # FastMCP instance + tool registration
+    tools/                    # MCP tool definitions (call services directly)
+      biochem.py              #   4 tools: search/get compounds and reactions
+      models.py               #   6 tools: list, get, delete, copy, export, edit
+      media.py                #   2 tools: list and get media formulations
+      jobs.py                 #   5 tools: build, gapfill, FBA, merge, check
   job_scripts/                # External scripts for long-running ops
     reconstruct.py            # BV-BRC genome to metabolic model
     gapfill.py                # Model gapfilling via MSGapfill
@@ -456,6 +560,11 @@ tests/
   conftest.py                 # Pytest fixtures
   test_live_integration.py    # Integration tests against live workspace
   test_auth.py                # Auth dependency unit tests
+  test_mcp/                   # MCP tool unit tests (40 tests)
+    test_biochem_tools.py
+    test_model_tools.py
+    test_media_tools.py
+    test_job_tools.py
 ```
 
 
