@@ -524,8 +524,8 @@ The build context is the **parent directory** containing all sibling repos (not 
 - CI/CD pipeline
 - Integration tests against dev workspace
 - Structured logging
-- ~~Celery task parity with job scripts~~ (done — tasks connect to existing `redis://bioseed_redis:6379/10` broker, queue `modelseed`, Flower at `poplar:5555`)
-- Dedicated modelseed Celery worker process (currently uses shared worker pool)
+- ~~Celery task parity with job scripts~~ (done — `tasks.py` mirrors all job scripts, `celery_app.py` configured for `redis://bioseed_redis:6379/10`)
+- Deploy Celery worker for modelseed queue (tasks are ready but poplar currently runs in subprocess mode; needs `MODELSEED_USE_CELERY=true` + a worker process)
 - Health check enhancements
 - Job store file locking for concurrent access
 
