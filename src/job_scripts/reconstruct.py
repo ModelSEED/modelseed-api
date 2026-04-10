@@ -1,14 +1,14 @@
 """Model reconstruction job script.
 
 Runs outside the API service process.
-Uses KBUtilLib/ModelSEEDpy to build a metabolic model from a BV-BRC genome.
+Builds a metabolic model from a BV-BRC genome ID or protein FASTA.
 
 Pipeline:
-  1. Fetch genome from BV-BRC API via BVBRCUtils
-  2. Convert to MSGenome via KBaseObjectFactory
-  3. Load templates from local ModelSEEDTemplates repo
-  4. Build model via MSReconstructionUtils.build_metabolic_model()
-  5. Save model to PATRIC workspace
+  1. Fetch genome from BV-BRC API (or parse FASTA)
+  2. Classify genome type (auto) or use explicit template
+  3. Build model via KBUtilLib
+  4. Optionally gapfill
+  5. Save model to workspace
 
 Usage:
     python reconstruct.py --job-id <id> --token <token> --params <json> --job-store-dir <dir>
@@ -16,10 +16,13 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def update_job(job_file, updates):
@@ -31,12 +34,7 @@ def update_job(job_file, updates):
 
 
 def merge_ws_metadata(ws, obj_path, new_meta):
-    """Merge new metadata into existing workspace metadata.
-
-    PATRIC workspace update_metadata replaces the entire user_meta dict,
-    so we must read existing metadata first, merge, then write back.
-    ls on a folder lists its children, so we ls the parent and find our item.
-    """
+    """Merge new metadata into existing workspace metadata."""
     existing = {}
     try:
         obj_path = obj_path.rstrip("/")
@@ -57,8 +55,6 @@ def merge_ws_metadata(ws, obj_path, new_meta):
     ws.update_metadata({"objects": [[obj_path, merged]]})
 
 
-
-
 def main():
     parser = argparse.ArgumentParser(description="Model reconstruction job")
     parser.add_argument("--job-id", required=True)
@@ -73,47 +69,45 @@ def main():
 
     update_job(job_file, {"status": "in-progress", "start_time": now()})
 
-    # Support @filename for large params (e.g. genome_fasta > 100KB)
+    # Support @filename for large params (FASTA content)
     if args.params.startswith("@"):
         params = json.loads(Path(args.params[1:]).read_text())
     else:
         params = json.loads(args.params)
+
     genome_id = params.get("genome", "")
-    # Strip source prefix if frontend sends "PATRIC:469009.4" or "RAST:12345"
-    if ":" in genome_id:
-        genome_id = genome_id.split(":", 1)[1]
     genome_fasta = params.get("genome_fasta")
-    template_type = params.get("template_type", "gn")
+    template_type = params.get("template_type", "auto")
     atp_safe = params.get("atp_safe", True)
-    do_gapfill = params.get("gapfill", False)
+    gapfill = params.get("gapfill", False)
     media_ref = params.get("media")
     output_path = params.get("output_path")
 
+    if not genome_id:
+        raise ValueError("genome is required")
+    if ":" in genome_id:
+        genome_id = genome_id.split(":", 1)[1]
+
     try:
-        # Add project root to path for imports
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from modelseed_api.config import settings
+        from modelseed_api.services.storage_factory import get_storage_service
+        from modelseed_api.jobs.tasks import (
+            _load_template, _get_classifier, _load_media, _resolve_media_ref,
+            TEMPLATE_FILES,
+        )
 
-        # WORKAROUND: cobrakbase.KBaseAPI() requires non-empty KB_AUTH_TOKEN
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
 
-        # Step 3: Load template
+        # Load template: defer when "auto"
         update_job(job_file, {"progress": "Loading templates..."})
-        from modelseedpy import MSTemplateBuilder
-
-        templates_dir = settings.templates_path
-        template_files = {
-            "gn": "GramNegModelTemplateV7.json",
-            "gp": "GramPosModelTemplateV7.json",
-            "gramneg": "GramNegModelTemplateV7.json",
-            "grampos": "GramPosModelTemplateV7.json",
-        }
-        gs_filename = template_files.get(template_type, "GramNegModelTemplateV7.json")
-        with open(f"{templates_dir}/{gs_filename}") as f:
-            gs_template = MSTemplateBuilder.from_dict(json.load(f)).build()
+        if template_type == "auto":
+            gs_template_obj = None
+        else:
+            gs_template_obj = _load_template(template_type)
 
         if genome_fasta:
-            # ── FASTA path: MSGenome + MSBuilder (no BV-BRC API) ──
+            # ── FASTA path ──
             update_job(job_file, {"progress": "Parsing FASTA..."})
             from modelseedpy.core.msgenome import MSGenome, parse_fasta_str
             from modelseedpy.core.msbuilder import MSBuilder
@@ -130,9 +124,8 @@ def main():
 
             update_job(job_file, {"progress": "Annotating & building model..."})
             model = MSBuilder.build_metabolic_model(
-                genome_id,
-                ms_genome,
-                template=gs_template,
+                genome_id, ms_genome,
+                template=gs_template_obj,
                 annotate_with_rast=True,
                 gapfill_model=False,
             )
@@ -145,10 +138,10 @@ def main():
                 "Class": template_type,
             }
         else:
-            # ── BV-BRC path: KBUtilLib pipeline ──
+            # ── BV-BRC path ──
             from kbutillib import BVBRCUtils, MSReconstructionUtils
 
-            init_kwargs = dict(
+            kwargs = dict(
                 config_file=False,
                 token_file=None,
                 kbase_token_file=None,
@@ -157,181 +150,104 @@ def main():
                 cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
             )
 
-            # Step 1: Fetch genome from BV-BRC API
-            update_job(job_file, {"status": "in-progress", "progress": "Fetching genome..."})
-            bvbrc = BVBRCUtils(**init_kwargs)
+            update_job(job_file, {"progress": "Fetching genome..."})
+            bvbrc = BVBRCUtils(**kwargs)
             kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
 
             organism_name = kbase_genome.get("scientific_name", "")
             taxonomy = kbase_genome.get("taxonomy", "")
             domain = kbase_genome.get("domain", "")
 
-            # Step 2: Convert to MSGenome
             update_job(job_file, {"progress": "Converting genome..."})
-            recon = MSReconstructionUtils(**init_kwargs)
+            recon = MSReconstructionUtils(**kwargs)
             genome = recon.get_msgenome_from_dict(kbase_genome)
 
-            with open(f"{templates_dir}/Core-V6.json") as f:
-                core_template = MSTemplateBuilder.from_dict(json.load(f)).build()
+            core_template = _load_template("core")
 
-            # Step 4: Build model
             update_job(job_file, {"progress": "Building model..."})
             output, mdlutl = recon.build_metabolic_model(
                 genome=genome,
-                genome_classifier=None,
+                genome_classifier=_get_classifier() if template_type == "auto" else None,
                 core_template=core_template,
-                gs_template_obj=gs_template,
+                gs_template_obj=gs_template_obj,
                 gs_template=template_type,
                 atp_safe=atp_safe,
             )
 
-        if mdlutl is None:
-            update_job(job_file, {
-                "status": "completed",
-                "completed_time": now(),
-                "result": {
+            if mdlutl is None:
+                result_data = {
                     "status": "skipped",
                     "comments": output.get("Comments", []),
-                },
-            })
-            print(f"Reconstruction skipped: {output.get('Comments')}")
-            return
+                }
+                update_job(job_file, {
+                    "status": "completed",
+                    "completed_time": now(),
+                    "result": result_data,
+                })
+                print(f"Model skipped: {result_data}")
+                return
 
-        # Step 5: Gapfill if requested
+        # Resolve template for gapfilling if auto was used
+        if gs_template_obj is None:
+            _class_to_type = {
+                "Gram Negative": "gn", "Gram Positive": "gp", "Archaea": "ar",
+            }
+            resolved_type = _class_to_type.get(output.get("Class", ""), "gn")
+            gs_template_obj = _load_template(resolved_type)
+
+        # Gapfill if requested
         gapfill_count = 0
-        if do_gapfill:
-            update_job(job_file, {"progress": "Loading media for gapfilling..."})
-
-            # Load media from workspace via our storage service (not
-            # PatricWSUtils, which connects directly to the old workspace
-            # API that returns empty data for public media).
-            ms_media = None
-            if media_ref:
-                from modelseed_api.services.storage_factory import get_storage_service
-                from modelseedpy.core.msmedia import MediaCompound
-
-                def _resolve_media_path(ref):
-                    if not ref or ref.lower() == "complete":
-                        return None
-                    if "/" in ref:
-                        return ref
-                    return f"{settings.public_media_path}/{ref}"
-
-                ws_media_path = _resolve_media_path(media_ref)
-                if ws_media_path:
-                    ws_svc = get_storage_service(args.token)
-                    media_result = ws_svc.get({"objects": [ws_media_path]})
-                    if not media_result or not media_result[0]:
-                        raise ValueError(f"Media not found: {ws_media_path}")
-                    media_raw = media_result[0][1] if len(media_result[0]) > 1 else ""
-                    if isinstance(media_raw, str) and media_raw.startswith("http") and "shock" in media_raw:
-                        import requests as _req
-                        resp = _req.get(
-                            media_raw.rstrip("/") + "?download",
-                            headers={"Authorization": f"OAuth {args.token}"},
-                            timeout=60,
-                        )
-                        resp.raise_for_status()
-                        media_raw = resp.text
-
-                    media_compounds = []
-                    if isinstance(media_raw, str):
-                        try:
-                            media_obj = json.loads(media_raw)
-                            if isinstance(media_obj, dict):
-                                media_compounds = media_obj.get("mediacompounds", [])
-                        except (json.JSONDecodeError, TypeError):
-                            lines = media_raw.strip().split("\n")
-                            for line in lines[1:]:
-                                cols = line.split("\t")
-                                if len(cols) >= 5:
-                                    media_compounds.append({
-                                        "compound_ref": "~/compounds/" + cols[0],
-                                        "concentration": float(cols[2]) if cols[2] else 0.001,
-                                        "minFlux": float(cols[3]) if cols[3] else -100,
-                                        "maxFlux": float(cols[4]) if cols[4] else 100,
-                                    })
-                    elif isinstance(media_raw, dict):
-                        media_compounds = media_raw.get("mediacompounds", [])
-
-                    if media_compounds:
-                        from modelseedpy.core.msmedia import MSMedia as _MSMedia
-                        media_name = ws_media_path.rstrip("/").split("/")[-1]
-                        ms_media = _MSMedia(media_name, name=media_name)
-                        for mc in media_compounds:
-                            cpd_id = mc.get("compound_ref", "").split("/")[-1] if "compound_ref" in mc else mc.get("id", "")
-                            if cpd_id:
-                                ms_media.mediacompounds.append(
-                                    MediaCompound(
-                                        cpd_id,
-                                        -1 * mc.get("maxFlux", 100),
-                                        -1 * mc.get("minFlux", -100),
-                                        concentration=mc.get("concentration", 0.001),
-                                    )
-                                )
-                        print(f"Loaded media {media_name}: {len(ms_media.mediacompounds)} compounds")
-
+        if gapfill:
             update_job(job_file, {"progress": "Running gapfilling..."})
             from modelseedpy import MSGapfill
             from modelseedpy.core.msmedia import MSMedia
 
-            # WORKAROUND: MSGapfill crashes on media=None in error path
+            ms_media = None
+            ws_media_path = _resolve_media_ref(media_ref)
+            if ws_media_path:
+                ms_media = _load_media(ws_media_path, args.token)
+
             if ms_media is None:
                 ms_media = MSMedia("Complete", "Complete")
 
             gapfiller = MSGapfill(
                 mdlutl.model,
                 default_target="bio1",
-                default_gapfill_templates=[gs_template],
+                default_gapfill_templates=[gs_template_obj],
             )
-            # run_gapfilling returns a single solution dict or None
             solution = gapfiller.run_gapfilling(media=ms_media)
             if solution:
-                # Integrate solution into the model (adds reactions, sets bounds,
-                # assigns genes) and populates mdlutl.integrated_gapfillings
                 gapfiller.integrate_gapfill_solution(solution)
                 gapfill_count = 1
-            print(f"Gapfilling completed: {gapfill_count} solution(s)")
 
-        # Compute model stats (use live model counts — may differ from
-        # initial output if gapfilling added reactions)
-        n_reactions = len(mdlutl.model.reactions)
-        n_genes = len(mdlutl.model.genes)
+        # Compute stats
+        n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
+        n_genes = output.get("Model genes", len(mdlutl.model.genes))
         n_metabolites = len(mdlutl.model.metabolites)
         n_compartments = len(mdlutl.model.compartments)
         classification = output.get("Class", template_type)
 
-        # Step 6: Save model to storage
+        # Save model to storage
         if output_path:
             update_job(job_file, {"progress": "Saving model..."})
-            from modelseed_api.services.storage_factory import get_storage_service
             ws = get_storage_service(args.token)
 
-            # Save cobra JSON BEFORE CobraModelConverter (which loses exchange
-            # bounds and breaks FBA). cobra.io roundtrip is lossless.
             import cobra.io
             mdlutl.model.objective = "bio1"
             cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
 
-            # Serialize to workspace format (modelreactions, modelcompounds, etc.)
-            # mdlutl.model is an FBAModel (from cobrakbase) — get_data() returns
-            # workspace-format dict with modelreactions, modelcompounds, etc.
             if not hasattr(mdlutl.model, 'get_data'):
                 from cobrakbase.core.kbasefba.fbamodel_from_cobra import CobraModelConverter
                 mdlutl.model = CobraModelConverter(mdlutl.model).build()
             mdlutl.save_attributes()
             ws_data = mdlutl.model.get_data()
 
-            # Persist gapfilling solution data to model object so it's
-            # available via list_gapfill_solutions() and the detail view
             if gapfill_count > 0:
                 mdlutl.create_kb_gapfilling_data(ws_data)
 
             model_data = json.dumps(ws_data)
-
             n_biomasses = len(ws_data.get("biomasses", []))
 
-            # Folder metadata so list_models picks it up
             folder_meta = {
                 "id": genome_id,
                 "name": organism_name or genome_id,
@@ -352,7 +268,6 @@ def main():
                 "fba_count": "0",
             }
 
-            # Create modelfolder + model data + cobra JSON in one call
             ws.create({
                 "objects": [
                     [output_path, "modelfolder", folder_meta, ""],
@@ -362,14 +277,10 @@ def main():
                 "overwrite": 1,
             })
 
-            # Explicitly set folder metadata (ws.create may not persist it)
             try:
                 merge_ws_metadata(ws, output_path, folder_meta)
-                print(f"Updated folder metadata for {output_path}")
             except Exception as e:
                 print(f"Warning: failed to update folder metadata: {e}")
-
-            print(f"Model saved to workspace: {output_path}")
 
         result_data = {
             "status": "success",
@@ -379,7 +290,7 @@ def main():
             "genes": n_genes,
             "classification": classification,
             "core_gapfilling": output.get("Core GF", 0),
-            "gapfilled": do_gapfill,
+            "gapfilled": gapfill,
             "gapfill_solutions": gapfill_count,
             "atp_safe": atp_safe,
             "template_type": template_type,
@@ -392,8 +303,8 @@ def main():
             "result": result_data,
         })
 
-        print(f"Reconstruction completed: {result_data['reactions']} reactions, "
-              f"{result_data['genes']} genes, class={result_data['classification']}")
+        print(f"Reconstruction completed: {n_reactions} reactions, "
+              f"{n_genes} genes, class={classification}")
 
     except Exception as e:
         update_job(job_file, {
@@ -406,14 +317,11 @@ def main():
 
 
 if __name__ == "__main__":
-    # Outer safety net: if main() raises before its own try/except
-    # (e.g., arg parsing failure), still update the job file
     try:
         main()
     except SystemExit:
-        pass  # main() calls sys.exit(1) on failure — already handled
+        pass
     except Exception as e:
-        # Last resort: try to update job file from sys.argv
         import traceback
         traceback.print_exc()
         try:
