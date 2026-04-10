@@ -93,8 +93,8 @@ def main():
         from modelseed_api.config import settings
         from modelseed_api.services.storage_factory import get_storage_service
         from modelseed_api.jobs.tasks import (
-            _load_template, _get_classifier, _load_media, _resolve_media_ref,
-            TEMPLATE_FILES,
+            _load_template, _get_classifier, _classify_genome,
+            _load_media, _resolve_media_ref, TEMPLATE_FILES,
         )
 
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
@@ -164,13 +164,21 @@ def main():
 
             core_template = _load_template("core")
 
+            # Classify genome locally (if auto) to avoid KBUtilLib workspace call
+            resolved_type = template_type
+            if template_type == "auto":
+                update_job(job_file, {"progress": "Classifying genome..."})
+                class_name, resolved_type = _classify_genome(genome)
+                gs_template_obj = _load_template(resolved_type)
+                print(f"Auto-classified as {class_name}, using template {resolved_type}")
+
             update_job(job_file, {"progress": "Building model..."})
             output, mdlutl = recon.build_metabolic_model(
                 genome=genome,
-                genome_classifier=_get_classifier() if template_type == "auto" else None,
+                genome_classifier=None,
                 core_template=core_template,
                 gs_template_obj=gs_template_obj,
-                gs_template=template_type,
+                gs_template=resolved_type,
                 atp_safe=atp_safe,
             )
 

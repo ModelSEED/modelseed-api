@@ -75,7 +75,7 @@ def poll_job(api_url, headers, job_id, max_seconds=600):
                 print(f"    Job completed in {elapsed}s")
                 return job
             if status == "failed":
-                error = job.get("result", {}).get("error", "unknown")
+                error = job.get("error") or job.get("result", {}).get("error", "unknown")
                 raise RuntimeError(f"Job failed after {elapsed}s: {error}")
             # Show progress
             progress = job.get("progress", {}).get("status", status)

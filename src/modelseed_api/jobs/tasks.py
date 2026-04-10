@@ -105,6 +105,37 @@ def _get_classifier():
     return _classifier
 
 
+# Map classifier single-letter codes to human-readable class names and template types
+_CLASS_MAP = {
+    "P": ("Gram Positive", "gp"),
+    "N": ("Gram Negative", "gn"),
+    "--": ("Gram Negative", "gn"),
+    "A": ("Archaea", "ar"),
+}
+
+
+def _classify_genome(genome):
+    """Classify genome and return (class_name, template_type) or raise on unsupported.
+
+    Runs the ML classifier locally so we can load templates from local files
+    instead of letting KBUtilLib call the KBase workspace.
+    Returns e.g. ("Gram Negative", "gn") or ("Archaea", "ar").
+    Raises ValueError for Cyanobacteria or unknown classes.
+    """
+    classifier = _get_classifier()
+    raw_class = classifier.classify(genome)
+    logger.info("Classifier returned: %s", raw_class)
+
+    if raw_class == "C":
+        raise ValueError("Cyanobacteria not yet supported")
+
+    entry = _CLASS_MAP.get(raw_class)
+    if entry is None:
+        raise ValueError(f"Unrecognized genome class: {raw_class}")
+
+    return entry
+
+
 def _init_kwargs(token: str) -> dict:
     """Common kwargs for KBUtilLib initialization."""
     # WORKAROUND: cobrakbase requires non-empty KB_AUTH_TOKEN
@@ -360,16 +391,22 @@ def reconstruct(
 
         core_template = _load_template("core")
 
-        # Step 4: Build model
-        # When auto, pass the real classifier so KBUtilLib auto-detects genome type.
-        # When explicit (gn/gp/ar), skip classifier and respect user choice.
+        # Step 4: Classify genome (if auto) and build model
+        # We classify ourselves and load templates from local files to avoid
+        # KBUtilLib calling the KBase workspace (which requires a KBase token).
+        if template_type == "auto":
+            self.update_state(state="PROGRESS", meta={"status": "Classifying genome..."})
+            class_name, resolved_type = _classify_genome(genome)
+            gs_template_obj = _load_template(resolved_type)
+            logger.info("Auto-classified as %s, using template %s", class_name, resolved_type)
+
         self.update_state(state="PROGRESS", meta={"status": "Building model..."})
         output, mdlutl = recon.build_metabolic_model(
             genome=genome,
-            genome_classifier=_get_classifier() if template_type == "auto" else None,
+            genome_classifier=None,
             core_template=core_template,
             gs_template_obj=gs_template_obj,
-            gs_template=template_type,
+            gs_template=template_type if template_type != "auto" else resolved_type,
             atp_safe=atp_safe,
         )
 
@@ -379,9 +416,9 @@ def reconstruct(
                 "comments": output.get("Comments", []),
             }
 
-    # If auto classification was used, resolve the template for gapfilling
+    # If auto classification was used, gs_template_obj was already resolved
+    # before build_metabolic_model(). For FASTA path with auto, resolve now.
     if gs_template_obj is None:
-        # Map classifier output back to template type
         _class_to_type = {
             "Gram Negative": "gn", "Gram Positive": "gp", "Archaea": "ar",
         }
