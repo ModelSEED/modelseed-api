@@ -166,6 +166,7 @@ def main():
 
             # Classify genome locally (if auto) to avoid KBUtilLib workspace call
             resolved_type = template_type
+            class_name = None
             if template_type == "auto":
                 update_job(job_file, {"progress": "Classifying genome..."})
                 class_name, resolved_type = _classify_genome(genome)
@@ -181,6 +182,11 @@ def main():
                 gs_template=resolved_type,
                 atp_safe=atp_safe,
             )
+
+            # Set classification from our local classifier (KBUtilLib skips it
+            # when we pass genome_classifier=None)
+            if class_name:
+                output["Class"] = class_name
 
             if mdlutl is None:
                 result_data = {

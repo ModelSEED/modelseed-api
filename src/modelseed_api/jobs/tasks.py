@@ -394,6 +394,7 @@ def reconstruct(
         # Step 4: Classify genome (if auto) and build model
         # We classify ourselves and load templates from local files to avoid
         # KBUtilLib calling the KBase workspace (which requires a KBase token).
+        class_name = None
         if template_type == "auto":
             self.update_state(state="PROGRESS", meta={"status": "Classifying genome..."})
             class_name, resolved_type = _classify_genome(genome)
@@ -409,6 +410,11 @@ def reconstruct(
             gs_template=template_type if template_type != "auto" else resolved_type,
             atp_safe=atp_safe,
         )
+
+        # Set classification from our local classifier (KBUtilLib skips it
+        # when we pass genome_classifier=None)
+        if class_name:
+            output["Class"] = class_name
 
         if mdlutl is None:
             return {

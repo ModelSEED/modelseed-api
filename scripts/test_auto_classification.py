@@ -153,18 +153,13 @@ def run_tests(api_url, token, skip_archaea=False):
 
         print(f"\n2. AUTO classification: {name} ({genome_id})")
         print(f"   Expected class: {expected}")
-        print(f"   Output path: {model_ref}")
 
         try:
-            # Clean up any leftover from previous test
-            cleanup_model(api_url, headers, model_ref)
-
-            # Submit with template_type="auto"
+            # Submit with template_type="auto" (no output_path — skip workspace save)
             print("   Submitting reconstruct job (template_type=auto)...")
             job_id = submit_reconstruct(
                 api_url, headers, genome_id,
                 template_type="auto",
-                output_path=model_ref,
             )
             print(f"   Job ID: {job_id}")
 
@@ -185,39 +180,16 @@ def run_tests(api_url, token, skip_archaea=False):
                 print(f"   \033[31mFAIL\033[0m — Expected '{expected}', got '{classification}'")
                 failed += 1
 
-            # Verify model was saved and is accessible
-            r = requests.get(
-                f"{api_url}/api/models/data",
-                params={"ref": model_ref},
-                headers=headers,
-                timeout=30,
-            )
-            if r.status_code == 200:
-                data = r.json()
-                n_rxn = len(data.get("reactions", []))
-                n_cpd = len(data.get("compounds", []))
-                print(f"   Model saved: {n_rxn} reactions, {n_cpd} compounds")
-            else:
-                print(f"   WARNING: Could not fetch saved model ({r.status_code})")
-
-            # Clean up
-            cleanup_model(api_url, headers, model_ref)
-
         except Exception as e:
             print(f"   \033[31mFAIL\033[0m — {e}")
             failed += 1
-            cleanup_model(api_url, headers, model_ref)
 
     # ── Test explicit override ──
     print(f"\n3. EXPLICIT override: E. coli with template_type='gp' (should use Gram Positive)")
-    model_ref = f"/{username}/modelseed/auto_test_override"
     try:
-        cleanup_model(api_url, headers, model_ref)
-
         job_id = submit_reconstruct(
             api_url, headers, "511145.12",
             template_type="gp",
-            output_path=model_ref,
         )
         print(f"   Job ID: {job_id}")
 
@@ -226,7 +198,6 @@ def run_tests(api_url, token, skip_archaea=False):
         template_used = result.get("template_type", "MISSING")
 
         # When explicit, template_type in result should be "gp"
-        # (classification field may still show "gp" or the explicit type)
         if template_used == "gp":
             print(f"   \033[32mPASS\033[0m — Explicit override respected (template_type=gp)")
             passed += 1
@@ -234,12 +205,9 @@ def run_tests(api_url, token, skip_archaea=False):
             print(f"   \033[31mFAIL\033[0m — Expected template_type='gp', got '{template_used}'")
             failed += 1
 
-        cleanup_model(api_url, headers, model_ref)
-
     except Exception as e:
         print(f"   \033[31mFAIL\033[0m — {e}")
         failed += 1
-        cleanup_model(api_url, headers, model_ref)
 
     # ── Summary ──
     total = passed + failed
