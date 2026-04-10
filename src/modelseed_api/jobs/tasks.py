@@ -11,7 +11,20 @@ import logging
 import os
 
 from modelseed_api.config import settings
-from modelseed_api.jobs.celery_app import app
+
+# Celery is optional — only needed when running as a Celery worker.
+# Job scripts import helpers from this module without Celery installed.
+try:
+    from modelseed_api.jobs.celery_app import app
+except ImportError:
+    # Create a stub so @app.task decorators don't crash at import time
+    class _StubApp:
+        @staticmethod
+        def task(*args, **kwargs):
+            def decorator(fn):
+                return fn
+            return decorator
+    app = _StubApp()
 
 logger = logging.getLogger(__name__)
 

@@ -106,15 +106,9 @@ def submit_reconstruct(api_url, headers, genome_id, template_type="auto", output
         raise RuntimeError(f"Submit failed ({r.status_code}): {r.text[:200]}")
 
     data = r.json()
-    job_id = data.get("id") or data.get("job_id") or data.get("uuid", "")
     if isinstance(data, str):
-        job_id = data
-    if not job_id:
-        # Try extracting from nested result
-        for key in ("id", "job_id", "uuid"):
-            if key in data:
-                job_id = str(data[key])
-                break
+        return data
+    job_id = data.get("id") or data.get("job_id") or data.get("uuid", "")
     if not job_id:
         raise RuntimeError(f"No job ID in response: {data}")
     return job_id
