@@ -19,19 +19,9 @@ This document catalogs workarounds applied in the modelseed-api codebase. Each e
 
 ---
 
-## B. Genome classifier bypass
+## ~~B. Genome classifier bypass~~ (RESOLVED)
 
-**Applies to:** Both local and workspace modes
-
-**Root cause:** `MSGenomeClassifier` (used by KBUtilLib's `MSReconstructionUtils.build_metabolic_model()`) requires pickle files that are not distributed with the KBUtilLib package. Without them, genome classification (gram-positive vs gram-negative) fails.
-
-**Workaround:** Pass `genome_classifier=None` and explicitly specify the template type (e.g., `template_type="gn"` for gram-negative). The user selects the template type in the UI.
-
-**Locations:**
-- `src/modelseed_api/jobs/tasks.py` — `reconstruct()` task, `genome_classifier=None` argument
-- `src/job_scripts/reconstruct.py` — same pattern
-
-**Upstream:** KBUtilLib (cshenry/KBUtilLib). Classifier pickle files need to be distributed with the package, or classification needs an alternative implementation.
+**Status:** Fixed. The classifier is now loaded via `modelseedpy.helpers.get_classifier()` which auto-downloads the 25MB filter variant on first use. Default `template_type` changed to `"auto"` so classification runs automatically. Users can still bypass with explicit `"gn"`, `"gp"`, or `"ar"`. In Docker, classifier files are pre-downloaded at build time.
 
 ---
 

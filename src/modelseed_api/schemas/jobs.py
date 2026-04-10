@@ -38,7 +38,7 @@ class ReconstructionRequest(BaseModel):
 
     genome: str  # BV-BRC genome ID (e.g., "83332.12") or display name when using genome_fasta
     genome_fasta: Optional[str] = None  # Protein FASTA content (skips BV-BRC lookup)
-    template_type: str = "gn"  # gn, gp, grampos, gramneg
+    template_type: str = "auto"  # auto, gn, gp, ar, grampos, gramneg, archaea
     atp_safe: bool = True
     gapfill: bool = False  # gapfill after reconstruction
     media: Optional[str] = None  # media workspace ref for gapfilling

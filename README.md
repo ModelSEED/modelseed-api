@@ -109,6 +109,8 @@ Source and data repos are at `/scratch/jplfaria/repos/`. To redeploy after code 
 cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml build --no-cache api && docker compose -f modelseed-api/docker-compose.yml up -d
 ```
 
+For troubleshooting, restart procedures, and common issues, see **[docs/OPS_RUNBOOK.md](docs/OPS_RUNBOOK.md)**.
+
 ### 4. Get a PATRIC token
 
 1. Log in to https://www.bv-brc.org
@@ -380,13 +382,9 @@ KBUtilLib was designed for KBase notebook apps. Running it standalone requires t
 
 ~~`MSTemplateBuilder.from_dict().build()` doesn't set `.info`, but `build_metabolic_model()` references it.~~ The `.info` references were moved to `kb_build_metabolic_models()` with `hasattr` guards.
 
-### 3. Genome classifier bypass
+### ~~3. Genome classifier bypass~~ (RESOLVED)
 
-`MSGenomeClassifier` needs pickle files and feature data not included in the KBUtilLib repo. Bypassed by passing `classifier=None` and specifying template type explicitly:
-
-```python
-recon.build_metabolic_model(genome, classifier=None, gs_template='gn')
-```
+~~`MSGenomeClassifier` needs pickle files not in KBUtilLib.~~ Fixed: classifier is now loaded via `modelseedpy.helpers.get_classifier()` (auto-downloads 25MB on first use). Default `template_type` is `"auto"` — users can still override with `"gn"`, `"gp"`, or `"ar"`.
 
 ### 4. KB_AUTH_TOKEN environment variable
 
@@ -645,7 +643,7 @@ The build context is the **parent directory** containing all sibling repos (not 
 | ~~KBUtilLib~~ | ~~`BVBRCUtils.save()` debug call~~ | ~~Merged (PR #25)~~ | ~~Removed~~ |
 | ~~KBUtilLib~~ | ~~`.info` on non-WS templates~~ | ~~Merged (PR #26)~~ | ~~Removed~~ |
 | ~~KBUtilLib~~ | ~~PATRIC media TSV parsing~~ | ~~Merged (PR #24)~~ | ~~Removed (`utils.py` deleted)~~ |
-| KBUtilLib | `MSGenomeClassifier` needs pickle files not in repo | Open | Pass `classifier=None` + explicit template type (workaround 3) |
+| ~~KBUtilLib~~ | ~~`MSGenomeClassifier` needs pickle files~~ | ~~Fixed~~ | ~~Classifier loaded via `get_classifier()`, default `template_type="auto"`~~ |
 | KBUtilLib | No `template_source="git"` config | Open — Chris agreed to add | Dummy `KB_AUTH_TOKEN` env var (workaround 4) |
 | ModelSEEDpy | `run_gapfilling()` doesn't auto-integrate | Open | Explicit `integrate_gapfill_solution()` + `create_kb_gapfilling_data()` (workaround 5) |
 | PATRIC WS | `ws.create()` doesn't persist metadata | Open | Explicit `ws.update_metadata()` after create (workaround 6) |

@@ -47,6 +47,9 @@ COPY modelseed-api/data/ /app/data/
 COPY modelseed-api/pyproject.toml /app/
 RUN pip install --no-cache-dir -e ".[modeling]"
 
+# Pre-download genome classifier files (~25MB) so first model build is fast
+RUN python -c "from modelseedpy.helpers import get_classifier; get_classifier('knn_ACNP_RAST_filter_01_17_2023')"
+
 # Environment configuration
 ENV MODELSEED_MODELSEED_DB_PATH=/deps/ModelSEEDDatabase
 ENV MODELSEED_TEMPLATES_PATH=/deps/ModelSEEDTemplates/templates/v7.0

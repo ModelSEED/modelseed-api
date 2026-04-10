@@ -27,6 +27,8 @@ TEMPLATE_FILES = {
     "gn": "GramNegModelTemplateV7.json",
     "grampos": "GramPosModelTemplateV7.json",
     "gramneg": "GramNegModelTemplateV7.json",
+    "ar": "ArchaeaTemplateV6.json",
+    "archaea": "ArchaeaTemplateV6.json",
 }
 
 
@@ -74,6 +76,20 @@ def _load_template(template_type: str):
 
     template = MSTemplateBuilder.from_dict(template_data).build()
     return template
+
+
+_classifier = None  # Module-level cache
+
+
+def _get_classifier():
+    """Load genome classifier, downloading on first use (~25MB)."""
+    global _classifier
+    if _classifier is None:
+        from modelseedpy.helpers import get_classifier
+        logger.info("Loading genome classifier (will download ~25MB on first use)...")
+        _classifier = get_classifier("knn_ACNP_RAST_filter_01_17_2023")
+        logger.info("Genome classifier loaded successfully")
+    return _classifier
 
 
 def _init_kwargs(token: str) -> dict:
@@ -238,7 +254,7 @@ def reconstruct(
     token: str,
     genome: str = "",
     genome_fasta: str | None = None,
-    template_type: str = "gn",
+    template_type: str = "auto",
     atp_safe: bool = True,
     gapfill: bool = False,
     media: str | None = None,
@@ -249,7 +265,10 @@ def reconstruct(
 ):
     """Build a metabolic model from a BV-BRC genome or protein FASTA.
 
-    Mirrors src/job_scripts/reconstruct.py for full parity.
+    When template_type is "auto" (default), the genome classifier auto-detects
+    the organism type (gram-neg, gram-pos, archaea). Users can bypass the
+    classifier by specifying "gn", "gp", or "ar" explicitly.
+
     When genome_fasta is provided, uses ModelSEEDpy MSBuilder directly
     (RAST annotation + model build) instead of the BV-BRC API pipeline.
     """
@@ -262,9 +281,12 @@ def reconstruct(
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
 
-    # Step 3: Load templates from local files
+    # Load template: defer when "auto" (classifier will pick the right one)
     self.update_state(state="PROGRESS", meta={"status": "Loading templates..."})
-    gs_template_obj = _load_template(template_type)
+    if template_type == "auto":
+        gs_template_obj = None
+    else:
+        gs_template_obj = _load_template(template_type)
 
     if genome_fasta:
         # ── FASTA path: MSGenome + MSBuilder (no BV-BRC API) ──
@@ -282,12 +304,13 @@ def reconstruct(
         taxonomy = ""
         domain = ""
 
-        # MSBuilder handles RAST annotation + model build in one step
+        # MSBuilder handles RAST annotation + model build in one step.
+        # template=None triggers auto-selection when template_type is "auto".
         self.update_state(state="PROGRESS", meta={"status": "Annotating & building model..."})
         model = MSBuilder.build_metabolic_model(
             genome_id,
             ms_genome,
-            template=gs_template_obj,
+            template=gs_template_obj,  # None when auto, loaded template when explicit
             annotate_with_rast=True,
             gapfill_model=False,  # We handle gapfill separately below
         )
@@ -325,11 +348,12 @@ def reconstruct(
         core_template = _load_template("core")
 
         # Step 4: Build model
+        # When auto, pass the real classifier so KBUtilLib auto-detects genome type.
+        # When explicit (gn/gp/ar), skip classifier and respect user choice.
         self.update_state(state="PROGRESS", meta={"status": "Building model..."})
         output, mdlutl = recon.build_metabolic_model(
             genome=genome,
-            # WORKAROUND: classifier pickle files not available
-            genome_classifier=None,
+            genome_classifier=_get_classifier() if template_type == "auto" else None,
             core_template=core_template,
             gs_template_obj=gs_template_obj,
             gs_template=template_type,
@@ -341,6 +365,15 @@ def reconstruct(
                 "status": "skipped",
                 "comments": output.get("Comments", []),
             }
+
+    # If auto classification was used, resolve the template for gapfilling
+    if gs_template_obj is None:
+        # Map classifier output back to template type
+        _class_to_type = {
+            "Gram Negative": "gn", "Gram Positive": "gp", "Archaea": "ar",
+        }
+        resolved_type = _class_to_type.get(output.get("Class", ""), "gn")
+        gs_template_obj = _load_template(resolved_type)
 
     # Step 5: Gapfill if requested
     gapfill_count = 0
