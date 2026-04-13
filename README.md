@@ -103,10 +103,10 @@ The API is deployed on poplar via Docker:
 | http://poplar.cels.anl.gov:8000/docs | Swagger API docs |
 | http://poplar.cels.anl.gov:8000/api/health | Health check |
 
-Source and data repos are at `/scratch/jplfaria/repos/`. To redeploy after code changes:
+Source and data repos are at `/scratch/modelseed/` (group: HenryLab, mode: 770). To redeploy after code changes:
 
 ```bash
-cd /scratch/jplfaria/repos && docker compose -f modelseed-api/docker-compose.yml build --no-cache api && docker compose -f modelseed-api/docker-compose.yml up -d
+cd /scratch/modelseed && docker compose -f modelseed-api/docker-compose.yml build --no-cache api && docker compose -f modelseed-api/docker-compose.yml up -d
 ```
 
 For troubleshooting, restart procedures, and common issues, see **[docs/OPS_RUNBOOK.md](docs/OPS_RUNBOOK.md)**.

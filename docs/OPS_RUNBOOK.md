@@ -6,10 +6,10 @@ Quick reference for anyone who needs to check, restart, or troubleshoot the Mode
 
 ```
 ssh <your-username>@poplar.cels.anl.gov
-cd /scratch/jplfaria/repos
+cd /scratch/modelseed
 ```
 
-All repos and Docker files live under `/scratch/jplfaria/repos/`. The service runs as a Docker container.
+All repos and Docker files live under `/scratch/modelseed/`. The directory has group ownership (`HenryLab`, mode 770) so any team member can manage the service.
 
 
 ## Check if the service is running
@@ -36,14 +36,14 @@ docker ps --filter name=modelseed
 ### Quick restart (no code changes)
 
 ```bash
-cd /scratch/jplfaria/repos
+cd /scratch/modelseed
 docker compose -f modelseed-api/docker-compose.yml restart api
 ```
 
 ### Restart after code changes
 
 ```bash
-cd /scratch/jplfaria/repos
+cd /scratch/modelseed
 docker compose -f modelseed-api/docker-compose.yml build --no-cache api
 docker compose -f modelseed-api/docker-compose.yml up -d
 ```
@@ -55,7 +55,7 @@ docker compose -f modelseed-api/docker-compose.yml up -d
 If the container is in a bad state (won't stop, zombie process, etc.):
 
 ```bash
-cd /scratch/jplfaria/repos
+cd /scratch/modelseed
 docker compose -f modelseed-api/docker-compose.yml down
 docker rmi $(docker images --filter reference='*modelseed*' -q) 2>/dev/null
 docker compose -f modelseed-api/docker-compose.yml build --no-cache api
@@ -130,14 +130,14 @@ docker exec modelseed-api-api-1 python -c "import urllib.request; print(urllib.r
 ### Updating code
 
 ```bash
-cd /scratch/jplfaria/repos/modelseed-api
+cd /scratch/modelseed/modelseed-api
 git pull
 
 # If only modelseed-api code changed:
 docker compose -f docker-compose.yml build --no-cache api && docker compose -f docker-compose.yml up -d
 
 # If dependency repos changed too (ModelSEEDpy, KBUtilLib, etc.):
-cd /scratch/jplfaria/repos
+cd /scratch/modelseed
 cd ModelSEEDpy && git pull && cd ..
 cd KBUtilLib && git pull && cd ..
 # ... etc for any changed repo
@@ -182,13 +182,13 @@ The container is self-contained — all Python dependencies and data repos are b
 
 | Path | What |
 |------|------|
-| `/scratch/jplfaria/repos/modelseed-api/` | This repo |
-| `/scratch/jplfaria/repos/ModelSEEDpy/` | Modeling engine (cshenry fork) |
-| `/scratch/jplfaria/repos/KBUtilLib/` | KBase utility library |
-| `/scratch/jplfaria/repos/cobrakbase/` | KBase/cobra bridge |
-| `/scratch/jplfaria/repos/ModelSEEDDatabase/` | Biochemistry data (dev branch) |
-| `/scratch/jplfaria/repos/ModelSEEDTemplates/` | Model templates v7.0 |
-| `/scratch/jplfaria/repos/cb_annotation_ontology_api/` | Annotation ontology |
+| `/scratch/modelseed/modelseed-api/` | This repo |
+| `/scratch/modelseed/ModelSEEDpy/` | Modeling engine (cshenry fork) |
+| `/scratch/modelseed/KBUtilLib/` | KBase utility library |
+| `/scratch/modelseed/cobrakbase/` | KBase/cobra bridge |
+| `/scratch/modelseed/ModelSEEDDatabase/` | Biochemistry data (dev branch) |
+| `/scratch/modelseed/ModelSEEDTemplates/` | Model templates v7.0 |
+| `/scratch/modelseed/cb_annotation_ontology_api/` | Annotation ontology |
 
 
 ## Contacts
