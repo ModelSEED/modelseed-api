@@ -78,7 +78,9 @@ def poll_job(api_url, headers, job_id, max_seconds=600):
                 error = job.get("error") or job.get("result", {}).get("error", "unknown")
                 raise RuntimeError(f"Job failed after {elapsed}s: {error}")
             # Show progress
-            progress = job.get("progress", {}).get("status", status)
+            progress = job.get("progress", status)
+            if isinstance(progress, dict):
+                progress = progress.get("status", status)
             if elapsed % 30 == 0:
                 print(f"    ... {elapsed}s elapsed, status: {progress}")
         except requests.RequestException:
