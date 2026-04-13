@@ -224,10 +224,19 @@ def main():
             if ms_media is None:
                 ms_media = MSMedia("Complete", "Complete")
 
+            # Retrieve ATP test conditions computed during model build.
+            atp_tests = []
+            try:
+                atp_tests = mdlutl.get_atp_tests(core_template=core_template)
+                print(f"Loaded {len(atp_tests)} ATP test conditions for gapfilling")
+            except Exception as e:
+                print(f"Warning: could not load ATP tests: {e}")
+
             gapfiller = MSGapfill(
                 mdlutl.model,
                 default_target="bio1",
                 default_gapfill_templates=[gs_template_obj],
+                test_conditions=atp_tests,
             )
             solution = gapfiller.run_gapfilling(media=ms_media)
             if solution:

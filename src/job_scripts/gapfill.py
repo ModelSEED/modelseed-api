@@ -253,10 +253,25 @@ def main():
         if ms_media is None:
             ms_media = MSMedia("Complete", "Complete")
 
+        # Retrieve ATP test conditions for solution validation.
+        # These prevent the gapfiller from adding reactions that create
+        # thermodynamically infeasible energy cycles.
+        core_filename = "Core-V6.json"
+        with open(f"{settings.templates_path}/{core_filename}") as f:
+            core_template = MSTemplateBuilder.from_dict(json.load(f)).build()
+
+        atp_tests = []
+        try:
+            atp_tests = mdlutl.get_atp_tests(core_template=core_template)
+            print(f"Loaded {len(atp_tests)} ATP test conditions for gapfilling")
+        except Exception as e:
+            print(f"Warning: could not load ATP tests: {e}")
+
         gapfiller = MSGapfill(
             fba_model,
             default_target="bio1",
             default_gapfill_templates=[template],
+            test_conditions=atp_tests,
         )
         # run_gapfilling returns a single solution dict or None
         solution = gapfiller.run_gapfilling(media=ms_media)

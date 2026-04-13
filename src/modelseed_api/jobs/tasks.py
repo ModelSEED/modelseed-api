@@ -448,10 +448,22 @@ def reconstruct(
         if ms_media is None:
             ms_media = MSMedia("Complete", "Complete")
 
+        # Retrieve ATP test conditions computed during model build.
+        # These are critical for the gapfiller to filter out reactions
+        # that create thermodynamically infeasible energy cycles and to
+        # validate solutions against ATP safety constraints.
+        atp_tests = []
+        try:
+            atp_tests = mdlutl.get_atp_tests(core_template=core_template)
+            logger.info("Loaded %d ATP test conditions for gapfilling", len(atp_tests))
+        except Exception as e:
+            logger.warning("Could not load ATP tests: %s", e)
+
         gapfiller = MSGapfill(
             mdlutl.model,
             default_target="bio1",
             default_gapfill_templates=[gs_template_obj],
+            test_conditions=atp_tests,
         )
         solution = gapfiller.run_gapfilling(media=ms_media)
         if solution:
@@ -619,10 +631,22 @@ def gapfill(
     if ms_media is None:
         ms_media = MSMedia("Complete", "Complete")
 
+    # Retrieve ATP test conditions for solution validation.
+    # These prevent the gapfiller from adding reactions that create
+    # thermodynamically infeasible energy cycles.
+    core_template = _load_template("core")
+    atp_tests = []
+    try:
+        atp_tests = mdlutl.get_atp_tests(core_template=core_template)
+        logger.info("Loaded %d ATP test conditions for gapfilling", len(atp_tests))
+    except Exception as e:
+        logger.warning("Could not load ATP tests: %s", e)
+
     gapfiller = MSGapfill(
         fba_model,
         default_target="bio1",
         default_gapfill_templates=[template],
+        test_conditions=atp_tests,
     )
     solution = gapfiller.run_gapfilling(media=ms_media)
 
