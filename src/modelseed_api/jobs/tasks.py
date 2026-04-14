@@ -457,7 +457,18 @@ def reconstruct(
             atp_safe=atp_safe,
         )
         gapfill_count = gf_output.get("GS GF") or 0
-        logger.info("Gapfill result: %s", gf_output.get("Growth"))
+        logger.info(
+            "Gapfill result: GS_GF=%s Growth=%s Reactions=%s solutions=%s",
+            gf_output.get("GS GF"),
+            gf_output.get("Growth"),
+            gf_output.get("Reactions"),
+            list(solutions.keys()) if solutions else None,
+        )
+        logger.info(
+            "Model after gapfill: %d reactions, %d metabolites",
+            len(mdlutl.model.reactions),
+            len(mdlutl.model.metabolites),
+        )
 
     # Compute model stats
     n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
