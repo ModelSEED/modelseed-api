@@ -213,7 +213,6 @@ def main():
         gapfill_count = 0
         if gapfill:
             update_job(job_file, {"progress": "Running gapfilling..."})
-            from modelseedpy import MSGapfill
             from modelseedpy.core.msmedia import MSMedia
 
             ms_media = None
@@ -224,24 +223,18 @@ def main():
             if ms_media is None:
                 ms_media = MSMedia("Complete", "Complete")
 
-            # Retrieve ATP test conditions computed during model build.
-            atp_tests = []
-            try:
-                atp_tests = mdlutl.get_atp_tests(core_template=core_template)
-                print(f"Loaded {len(atp_tests)} ATP test conditions for gapfilling")
-            except Exception as e:
-                print(f"Warning: could not load ATP tests: {e}")
-
-            gapfiller = MSGapfill(
-                mdlutl.model,
-                default_target="bio1",
-                default_gapfill_templates=[gs_template_obj],
-                test_conditions=atp_tests,
+            # Use KBUtilLib's gapfill_metabolic_model which handles everything:
+            # ATP tests, auto_sink, run_multi_gapfill, growth verification.
+            gf_output, solutions, _, _ = recon.gapfill_metabolic_model(
+                mdlutl=mdlutl,
+                genome=genome,
+                media_objs=[ms_media],
+                templates=[gs_template_obj],
+                core_template=core_template,
+                atp_safe=True,
             )
-            solution = gapfiller.run_gapfilling(media=ms_media)
-            if solution:
-                gapfiller.integrate_gapfill_solution(solution)
-                gapfill_count = 1
+            gapfill_count = gf_output.get("GS GF") or 0
+            print(f"Gapfill result: {gf_output.get('Growth')}")
 
         # Compute stats
         n_reactions = output.get("Reactions", len(mdlutl.model.reactions))

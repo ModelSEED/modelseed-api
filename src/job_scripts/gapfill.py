@@ -242,48 +242,47 @@ def main():
 
         # Step 5: Run gapfilling
         update_job(job_file, {"progress": "Running gapfilling..."})
-        from modelseedpy import MSGapfill
         from modelseedpy.core.msmedia import MSMedia
-
-        # WORKAROUND: MSGapfill.test_gapfill_database() crashes with
-        # "'NoneType' object has no attribute 'id'" when media=None and
-        # gapfilling fails to find a solution. Pass an empty MSMedia
-        # object instead of None — this is semantically identical
-        # (all exchanges open) but gives the error path a .id to reference.
         if ms_media is None:
             ms_media = MSMedia("Complete", "Complete")
 
-        # Retrieve ATP test conditions for solution validation.
-        # These prevent the gapfiller from adding reactions that create
-        # thermodynamically infeasible energy cycles.
+        # Use KBUtilLib's gapfill_metabolic_model which handles everything:
+        # ATP tests, auto_sink, run_multi_gapfill, growth verification.
         core_filename = "Core-V6.json"
         with open(f"{settings.templates_path}/{core_filename}") as f:
             core_template = MSTemplateBuilder.from_dict(json.load(f)).build()
 
-        atp_tests = []
-        try:
-            atp_tests = mdlutl.get_atp_tests(core_template=core_template)
-            print(f"Loaded {len(atp_tests)} ATP test conditions for gapfilling")
-        except Exception as e:
-            print(f"Warning: could not load ATP tests: {e}")
-
-        gapfiller = MSGapfill(
-            fba_model,
-            default_target="bio1",
-            default_gapfill_templates=[template],
-            test_conditions=atp_tests,
+        from kbutillib import MSReconstructionUtils
+        recon_kwargs = dict(
+            config_file=False,
+            token_file=None,
+            kbase_token_file=None,
+            token={"patric": args.token, "kbase": "unused"},
+            modelseed_path=str(settings.modelseed_db_path),
+            cb_annotation_ontology_api_path=str(settings.cb_annotation_ontology_api_path),
         )
-        # run_gapfilling returns a single solution dict or None
-        solution = gapfiller.run_gapfilling(media=ms_media)
+        recon = MSReconstructionUtils(**recon_kwargs)
 
-        solutions_count = 0
+        gf_output, solutions, _, _ = recon.gapfill_metabolic_model(
+            mdlutl=mdlutl,
+            genome=None,
+            media_objs=[ms_media],
+            templates=[template],
+            core_template=core_template,
+            atp_safe=True,
+        )
+        print(f"Gapfill result: {gf_output.get('Growth')}")
+
+        # Extract solution data
+        solution = None
+        for media_key in solutions:
+            solution = solutions[media_key]
+            break  # first media
+
+        # gapfill_metabolic_model already integrates solutions into the model
+        solutions_count = gf_output.get("GS GF") or 0
         added_reactions = []
         if solution:
-            # Integrate solution into model (adds reactions, sets bounds,
-            # assigns genes) and populates mdlutl.integrated_gapfillings
-            gapfiller.integrate_gapfill_solution(solution)
-            solutions_count = 1
-            # Collect added reaction IDs from the solution
             for rxn_id in solution.get("new", {}):
                 added_reactions.append(rxn_id)
             for rxn_id in solution.get("reversed", {}):

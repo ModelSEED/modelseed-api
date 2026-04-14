@@ -435,7 +435,6 @@ def reconstruct(
     gapfill_count = 0
     if gapfill:
         self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
-        from modelseedpy import MSGapfill
         from modelseedpy.core.msmedia import MSMedia
 
         # Load media from workspace if specified
@@ -444,31 +443,21 @@ def reconstruct(
         if ws_media_path:
             ms_media = _load_media(ws_media_path, token)
 
-        # WORKAROUND: MSGapfill crashes on media=None in error path
         if ms_media is None:
             ms_media = MSMedia("Complete", "Complete")
 
-        # Retrieve ATP test conditions computed during model build.
-        # These are critical for the gapfiller to filter out reactions
-        # that create thermodynamically infeasible energy cycles and to
-        # validate solutions against ATP safety constraints.
-        atp_tests = []
-        try:
-            atp_tests = mdlutl.get_atp_tests(core_template=core_template)
-            logger.info("Loaded %d ATP test conditions for gapfilling", len(atp_tests))
-        except Exception as e:
-            logger.warning("Could not load ATP tests: %s", e)
-
-        gapfiller = MSGapfill(
-            mdlutl.model,
-            default_target="bio1",
-            default_gapfill_templates=[gs_template_obj],
-            test_conditions=atp_tests,
+        # Use KBUtilLib's gapfill_metabolic_model which handles everything:
+        # ATP tests, auto_sink, run_multi_gapfill, growth verification.
+        gf_output, solutions, _, _ = recon.gapfill_metabolic_model(
+            mdlutl=mdlutl,
+            genome=genome,
+            media_objs=[ms_media],
+            templates=[gs_template_obj],
+            core_template=core_template,
+            atp_safe=atp_safe,
         )
-        solution = gapfiller.run_gapfilling(media=ms_media)
-        if solution:
-            gapfiller.integrate_gapfill_solution(solution)
-            gapfill_count = 1
+        gapfill_count = gf_output.get("GS GF") or 0
+        logger.info("Gapfill result: %s", gf_output.get("Growth"))
 
     # Compute model stats
     n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
@@ -621,44 +610,37 @@ def gapfill(
         self.update_state(state="PROGRESS", meta={"status": "Loading media..."})
         ms_media = _load_media(ws_media_path, token)
 
-    # Run gapfilling
+    # Run gapfilling via KBUtilLib's gapfill_metabolic_model which handles
+    # ATP tests, auto_sink, run_multi_gapfill, and growth verification.
     self.update_state(state="PROGRESS", meta={"status": "Running gapfilling..."})
-    from modelseedpy import MSGapfill
     from modelseedpy.core.msmedia import MSMedia
 
-    # WORKAROUND: MSGapfill.test_gapfill_database() crashes on media=None
-    # when gapfilling fails. Pass empty MSMedia instead (semantically identical).
     if ms_media is None:
         ms_media = MSMedia("Complete", "Complete")
 
-    # Retrieve ATP test conditions for solution validation.
-    # These prevent the gapfiller from adding reactions that create
-    # thermodynamically infeasible energy cycles.
     core_template = _load_template("core")
-    atp_tests = []
-    try:
-        atp_tests = mdlutl.get_atp_tests(core_template=core_template)
-        logger.info("Loaded %d ATP test conditions for gapfilling", len(atp_tests))
-    except Exception as e:
-        logger.warning("Could not load ATP tests: %s", e)
+    kwargs = _init_kwargs(token)
+    from kbutillib import MSReconstructionUtils
+    recon = MSReconstructionUtils(**kwargs)
 
-    gapfiller = MSGapfill(
-        fba_model,
-        default_target="bio1",
-        default_gapfill_templates=[template],
-        test_conditions=atp_tests,
+    gf_output, solutions, _, _ = recon.gapfill_metabolic_model(
+        mdlutl=mdlutl,
+        genome=None,
+        media_objs=[ms_media],
+        templates=[template],
+        core_template=core_template,
+        atp_safe=True,
     )
-    solution = gapfiller.run_gapfilling(media=ms_media)
 
-    solutions_count = 0
+    solutions_count = gf_output.get("GS GF") or 0
     added_reactions = []
-    if solution:
-        gapfiller.integrate_gapfill_solution(solution)
-        solutions_count = 1
-        for rxn_id in solution.get("new", {}):
+    for media_key in solutions:
+        sol = solutions[media_key]
+        for rxn_id in sol.get("new", {}):
             added_reactions.append(rxn_id)
-        for rxn_id in solution.get("reversed", {}):
+        for rxn_id in sol.get("reversed", {}):
             added_reactions.append(rxn_id)
+    logger.info("Gapfill result: %s", gf_output.get("Growth"))
 
     # Save gapfilled model back to workspace
     if solutions_count > 0:
