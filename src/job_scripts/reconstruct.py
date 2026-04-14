@@ -245,18 +245,21 @@ def main():
                 atp_safe=True,
             )
             gapfill_count = gf_output.get("GS GF") or 0
-            print(f"Gapfill GS_GF={gf_output.get('GS GF')} Growth={gf_output.get('Growth')} Reactions={gf_output.get('Reactions')}")
-            print(f"Model after gapfill: {len(mdlutl.model.reactions)} reactions, {len(mdlutl.model.metabolites)} metabolites")
-            # Check for DM reactions
-            dm = [r.id for r in mdlutl.model.reactions if r.id.startswith('DM_')]
-            print(f"DM reactions: {dm}")
-            # Quick growth test
-            try:
-                mdlutl.model.objective = "bio1"
-                sol = mdlutl.model.slim_optimize()
-                print(f"Growth test: {sol}")
-            except Exception as e:
-                print(f"Growth test failed: {e}")
+            print(f"Gapfill: GS_GF={gapfill_count} Growth={gf_output.get('Growth')}")
+
+            # Ensure demand reactions for auto_sink compounds that the
+            # gapfiller uses internally but may not include in the solution.
+            # The KBase pipeline gets these via the solver; we add them
+            # explicitly so FBA can drain biomass byproducts.
+            auto_sink = ["cpd11416", "cpd01042", "cpd02701", "cpd15302", "cpd03091"]
+            for cpd_id in auto_sink:
+                met_id = f"{cpd_id}_c0"
+                dm_id = f"DM_{met_id}"
+                if met_id in mdlutl.model.metabolites and dm_id not in mdlutl.model.reactions:
+                    met = mdlutl.model.metabolites.get_by_id(met_id)
+                    mdlutl.add_exchanges_for_metabolites(
+                        [met], uptake=0, excretion=1000, prefix="DM_", prefix_name="Demand for "
+                    )
 
         # Compute stats
         n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
