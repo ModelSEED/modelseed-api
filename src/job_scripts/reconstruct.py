@@ -234,7 +234,18 @@ def main():
                 atp_safe=True,
             )
             gapfill_count = gf_output.get("GS GF") or 0
-            print(f"Gapfill result: {gf_output.get('Growth')}")
+            print(f"Gapfill GS_GF={gf_output.get('GS GF')} Growth={gf_output.get('Growth')} Reactions={gf_output.get('Reactions')}")
+            print(f"Model after gapfill: {len(mdlutl.model.reactions)} reactions, {len(mdlutl.model.metabolites)} metabolites")
+            # Check for DM reactions
+            dm = [r.id for r in mdlutl.model.reactions if r.id.startswith('DM_')]
+            print(f"DM reactions: {dm}")
+            # Quick growth test
+            try:
+                mdlutl.model.objective = "bio1"
+                sol = mdlutl.model.slim_optimize()
+                print(f"Growth test: {sol}")
+            except Exception as e:
+                print(f"Growth test failed: {e}")
 
         # Compute stats
         n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
