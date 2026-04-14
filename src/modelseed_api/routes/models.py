@@ -13,7 +13,7 @@ from modelseed_api.schemas.models import (
     EditModelResponse,
     ManageGapfillsRequest,
 )
-from modelseed_api.services.export_service import export_cobra_json, export_sbml
+from modelseed_api.services.export_service import export_cobra_json, export_sbml, get_cobra_model
 from modelseed_api.services.model_service import ModelService
 from modelseed_api.services.workspace_service import WorkspaceError
 
@@ -111,18 +111,23 @@ async def export_model(
         if format == "json":
             return svc.get_model(ref)
         elif format == "sbml":
-            raw = svc.get_model_raw(ref)
+            import cobra.io as _cobra_io
+            cobra_model = get_cobra_model(ref, svc.ws)
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".xml", mode="w", delete=True) as f:
+                _cobra_io.write_sbml_model(cobra_model, f.name)
+                with open(f.name) as rf:
+                    sbml_str = rf.read()
             model_id = ref.rstrip("/").split("/")[-1]
-            sbml_str = export_sbml(raw, model_id=model_id)
             return Response(
                 content=sbml_str,
                 media_type="application/xml",
                 headers={"Content-Disposition": f'attachment; filename="{model_id}.xml"'},
             )
         elif format in ("cobra-json", "cobrapy"):
-            raw = svc.get_model_raw(ref)
-            model_id = ref.rstrip("/").split("/")[-1]
-            return export_cobra_json(raw, model_id=model_id)
+            import cobra.io as _cobra_io
+            cobra_model = get_cobra_model(ref, svc.ws)
+            return _cobra_io.model_to_dict(cobra_model)
         else:
             raise HTTPException(
                 status_code=400,
