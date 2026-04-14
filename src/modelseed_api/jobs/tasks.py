@@ -469,18 +469,6 @@ def reconstruct(
         gapfill_count = gf_output.get("GS GF") or 0
         logger.info("Gapfill: GS_GF=%s Growth=%s", gapfill_count, gf_output.get("Growth"))
 
-        # Ensure demand reactions for auto_sink compounds that the
-        # gapfiller uses internally but may not include in the solution.
-        auto_sink = ["cpd11416", "cpd01042", "cpd02701", "cpd15302", "cpd03091"]
-        for cpd_id in auto_sink:
-            met_id = f"{cpd_id}_c0"
-            dm_id = f"DM_{met_id}"
-            if met_id in mdlutl.model.metabolites and dm_id not in mdlutl.model.reactions:
-                met = mdlutl.model.metabolites.get_by_id(met_id)
-                mdlutl.add_exchanges_for_metabolites(
-                    [met], uptake=0, excretion=1000, prefix="DM_", prefix_name="Demand for "
-                )
-
     # Compute model stats
     n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
     n_genes = output.get("Model genes", len(mdlutl.model.genes))
@@ -663,17 +651,6 @@ def gapfill(
         for rxn_id in sol.get("reversed", {}):
             added_reactions.append(rxn_id)
     logger.info("Gapfill result: %s", gf_output.get("Growth"))
-
-    # Ensure demand reactions for auto_sink compounds
-    auto_sink = ["cpd11416", "cpd01042", "cpd02701", "cpd15302", "cpd03091"]
-    for cpd_id in auto_sink:
-        met_id = f"{cpd_id}_c0"
-        dm_id = f"DM_{met_id}"
-        if met_id in mdlutl.model.metabolites and dm_id not in mdlutl.model.reactions:
-            met = mdlutl.model.metabolites.get_by_id(met_id)
-            mdlutl.add_exchanges_for_metabolites(
-                [met], uptake=0, excretion=1000, prefix="DM_", prefix_name="Demand for "
-            )
 
     # Save gapfilled model back to workspace
     if solutions_count > 0:
