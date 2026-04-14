@@ -325,6 +325,16 @@ def reconstruct(
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
 
+    # Compute default output path from username + genome ID
+    if not output_path:
+        username = ""
+        for part in token.split("|"):
+            if part.startswith("un="):
+                username = part[3:]
+                break
+        if username:
+            output_path = f"/{username}/modelseed/{genome_id}"
+
     # Load template: defer when "auto" (classifier will pick the right one)
     self.update_state(state="PROGRESS", meta={"status": "Loading templates..."})
     if template_type == "auto":

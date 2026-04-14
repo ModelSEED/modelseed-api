@@ -85,6 +85,17 @@ def main():
 
     if not genome_id:
         raise ValueError("genome is required")
+
+    # Compute default output path from username + genome ID
+    if not output_path:
+        # Extract username from token: "un=user@patricbrc.org|..."
+        username = ""
+        for part in args.token.split("|"):
+            if part.startswith("un="):
+                username = part[3:]
+                break
+        if username:
+            output_path = f"/{username}/modelseed/{genome_id}"
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
 
