@@ -59,7 +59,7 @@ def main():
 
     store_dir = Path(args.job_store_dir)
     job_file = store_dir / f"{args.job_id}.json"
-    now = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
+    now = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Mark as in-progress
     update_job(job_file, {"status": "in-progress", "start_time": now()})

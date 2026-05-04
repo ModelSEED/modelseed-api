@@ -333,6 +333,8 @@ def main():
 
             # Persist gapfilling solution data to model object
             mdlutl.create_kb_gapfilling_data(ws_data)
+            from modelseed_api.jobs.tasks import _fix_gapfilling_metadata
+            _fix_gapfilling_metadata(ws_data, ws_media_path)
 
             model_data = json.dumps(ws_data)
             ws.create({

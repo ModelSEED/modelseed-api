@@ -105,7 +105,8 @@ def main():
         from modelseed_api.services.storage_factory import get_storage_service
         from modelseed_api.jobs.tasks import (
             _load_template, _get_classifier, _classify_genome,
-            _load_media, _resolve_media_ref, TEMPLATE_FILES,
+            _load_media, _resolve_media_ref, _fix_gapfilling_metadata,
+            TEMPLATE_FILES,
         )
 
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
@@ -271,6 +272,7 @@ def main():
 
             if gapfill_count > 0:
                 mdlutl.create_kb_gapfilling_data(ws_data)
+                _fix_gapfilling_metadata(ws_data, _resolve_media_ref(media_ref))
 
             model_data = json.dumps(ws_data)
             n_biomasses = len(ws_data.get("biomasses", []))

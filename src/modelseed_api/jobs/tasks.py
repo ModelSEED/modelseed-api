@@ -292,6 +292,75 @@ def _apply_media(cobra_model, ms_media):
         logger.warning("Media had no matching exchange reactions — running with default bounds")
 
 
+def _fix_gapfilling_metadata(ws_data: dict, media_workspace_ref: str | None) -> None:
+    """Override gapfilling metadata produced by ModelSEEDpy.
+
+    ModelSEEDpy's MSModelUtil.create_kb_gapfilling_data() sets:
+      - ``id`` to the media name (e.g. "Carbon-D-Glucose")
+      - ``media_ref`` to "KBaseMedia/Empty" when our MSMedia lacks an
+        ``info`` attribute (which it always does in our pipeline because
+        we build MSMedia from workspace TSV)
+      - empty ``rundate``
+
+    This rewrites those fields to use sequential ``gf.N`` IDs, the real
+    workspace ``media_ref`` we passed in, and the current ISO 8601
+    timestamp.  It also rekeys ``gapfill_data`` on each model reaction
+    to match the new IDs so the link stays intact.
+    """
+    from datetime import datetime, timezone
+
+    gapfillings = ws_data.get("gapfillings") or []
+    if not gapfillings:
+        return
+
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    media_ref_clean = (media_workspace_ref or "").strip() or "Complete"
+
+    # Find the next available gf.N index (preserve any pre-existing gf.N entries)
+    used_indexes = set()
+    for gf in gapfillings:
+        existing_id = str(gf.get("id", ""))
+        if existing_id.startswith("gf."):
+            try:
+                used_indexes.add(int(existing_id[3:]))
+            except ValueError:
+                pass
+    next_idx = 0
+
+    id_remap: dict[str, str] = {}
+    for gf in gapfillings:
+        old_id = str(gf.get("id", ""))
+        # Skip entries that already look like proper gf.N
+        if old_id.startswith("gf.") and old_id[3:].isdigit():
+            new_id = old_id
+        else:
+            while next_idx in used_indexes:
+                next_idx += 1
+            new_id = f"gf.{next_idx}"
+            used_indexes.add(next_idx)
+            next_idx += 1
+
+        if old_id and old_id != new_id:
+            id_remap[old_id] = new_id
+
+        gf["id"] = new_id
+        gf["gapfill_id"] = new_id
+        if not gf.get("media_ref") or gf["media_ref"] == "KBaseMedia/Empty":
+            gf["media_ref"] = media_ref_clean
+        if not gf.get("rundate"):
+            gf["rundate"] = now_iso
+
+    # Rekey gapfill_data on each model reaction
+    if id_remap:
+        for rxn in ws_data.get("modelreactions", []):
+            gd = rxn.get("gapfill_data")
+            if not isinstance(gd, dict):
+                continue
+            for old_id, new_id in id_remap.items():
+                if old_id in gd and new_id not in gd:
+                    gd[new_id] = gd.pop(old_id)
+
+
 @app.task(bind=True, name="modelseed.reconstruct")
 def reconstruct(
     self,
@@ -497,6 +566,7 @@ def reconstruct(
         # Persist gapfilling solution data to model object
         if gapfill_count > 0:
             mdlutl.create_kb_gapfilling_data(ws_data)
+            _fix_gapfilling_metadata(ws_data, _resolve_media_ref(media_ref))
 
         model_data = json.dumps(ws_data)
         n_biomasses = len(ws_data.get("biomasses", []))
@@ -694,6 +764,7 @@ def gapfill(
                 if rxn["id"] in old_gf_data:
                     rxn.setdefault("gapfill_data", {}).update(old_gf_data[rxn["id"]])
         mdlutl.create_kb_gapfilling_data(ws_data)
+        _fix_gapfilling_metadata(ws_data, _resolve_media_ref(media_ref))
 
         model_data = json.dumps(ws_data)
         ws.create({
@@ -816,7 +887,7 @@ def run_fba(
 
     # Determine next FBA ID (fba.0, fba.1, ...)
     from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     # Use whichever key the model already has (fbaFormulations for legacy models)
     fba_key = "fbaFormulations" if "fbaFormulations" in model_obj else "fba_studies"
     existing_studies = model_obj.get(fba_key, [])
