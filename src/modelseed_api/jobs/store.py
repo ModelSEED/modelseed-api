@@ -86,6 +86,23 @@ class JobStore:
             job["error"] = error
             self._write_job(job_id, job)
 
+    def update_job(self, job_id: str, updates: dict):
+        """Merge ``updates`` into the job record and persist."""
+        job = self._read_job(job_id)
+        if job is None:
+            # No record yet — create a stub so future polls return something
+            job = {"id": job_id}
+        job.update(updates)
+        self._write_job(job_id, job)
+
+    def set_progress(self, job_id: str, message: str):
+        """Record a progress message (does not change status)."""
+        self.update_job(job_id, {"progress": message})
+
+    def set_result(self, job_id: str, result):
+        """Record a completed task's return value."""
+        self.update_job(job_id, {"result": result})
+
     def delete_job(self, job_id: str, user: str):
         """Delete a job record."""
         job = self._read_job(job_id)

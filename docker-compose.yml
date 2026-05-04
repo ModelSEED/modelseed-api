@@ -3,17 +3,50 @@ services:
     build:
       context: ..
       dockerfile: modelseed-api/Dockerfile
+    container_name: modelseed-api-api-1
     ports:
       - "8000:8000"
     volumes:
       - modelseed-jobs:/tmp/modelseed-jobs
+    environment:
+      MODELSEED_USE_CELERY: "true"
+      MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
+      MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
     restart: unless-stopped
+    networks:
+      - default
+      - bioseed_network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 60s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: modelseed-api/Dockerfile
+    container_name: celery_modelseed
+    command: ["python", "-m", "modelseed_api.jobs.celery_app"]
+    volumes:
+      - modelseed-jobs:/tmp/modelseed-jobs
+    environment:
+      MODELSEED_USE_CELERY: "true"
+      MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
+      MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
+    restart: unless-stopped
+    networks:
+      - default
+      - bioseed_network
+    depends_on:
+      - api
+
+networks:
+  default:
+    driver: bridge
+  bioseed_network:
+    external: true
 
 volumes:
   modelseed-jobs:

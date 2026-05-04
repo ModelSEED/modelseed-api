@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir -e /deps/cobrakbase && \
 COPY modelseed-api/src/ /app/src/
 COPY modelseed-api/data/ /app/data/
 COPY modelseed-api/pyproject.toml /app/
-RUN pip install --no-cache-dir -e ".[modeling]"
+RUN pip install --no-cache-dir -e ".[modeling,celery]"
 
 # Fix numpy/sklearn binary compatibility (editable installs may pull mismatched versions)
 # then pre-download genome classifier files (~25MB) so first model build is fast
