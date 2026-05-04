@@ -64,6 +64,13 @@ app.conf.update(
     task_track_started=True,
     task_time_limit=3600 * 4,  # 4 hours max
     worker_prefetch_multiplier=1,
+    # Resilience: ack tasks only after they finish so a worker crash
+    # mid-task auto-requeues instead of losing the job. Tasks are
+    # idempotent (ws.create uses overwrite=1; reconstruct/gapfill/FBA
+    # all overwrite their outputs) so requeuing is safe.
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    broker_connection_retry_on_startup=True,
     task_default_queue=QUEUE,
     task_default_exchange=QUEUE,
     task_default_routing_key=QUEUE,
