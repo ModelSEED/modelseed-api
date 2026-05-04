@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Task(BaseModel):
@@ -36,7 +36,7 @@ class SubmitJobRequest(BaseModel):
 class ReconstructionRequest(BaseModel):
     """Request to build a model from a genome."""
 
-    genome: str  # BV-BRC genome ID (e.g., "83332.12") or display name when using genome_fasta
+    genome: str = Field(min_length=1)  # BV-BRC genome ID (e.g., "83332.12") or display name when using genome_fasta
     genome_fasta: Optional[str] = None  # Protein FASTA content (skips BV-BRC lookup)
     template_type: str = "auto"  # auto, gn, gp, ar, grampos, gramneg, archaea
     atp_safe: bool = True
@@ -48,7 +48,7 @@ class ReconstructionRequest(BaseModel):
 class GapfillRequest(BaseModel):
     """Request to gapfill a model."""
 
-    model: str  # workspace reference to model
+    model: str = Field(min_length=1)  # workspace reference to model
     template_type: str = "gn"
     media: Optional[str] = None  # media workspace reference
 
@@ -56,16 +56,16 @@ class GapfillRequest(BaseModel):
 class FBARequest(BaseModel):
     """Request to run flux balance analysis."""
 
-    model: str  # workspace reference to model
+    model: str = Field(min_length=1)  # workspace reference to model
     media: Optional[str] = None  # media workspace reference
 
 
 class MergeModelsRequest(BaseModel):
     """Request to merge multiple models."""
 
-    models: list[tuple[str, float]]  # [(model_ref, abundance), ...]
-    output_file: str
-    output_path: str
+    models: list[tuple[str, float]] = Field(min_length=1)  # [(model_ref, abundance), ...]
+    output_file: str = Field(min_length=1)
+    output_path: str = Field(min_length=1)
 
 
 class ManageJobsRequest(BaseModel):

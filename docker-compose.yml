@@ -36,6 +36,11 @@ services:
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
     restart: unless-stopped
+    # Give a long-running task (reconstruct + gapfill ~6-10 min, FBA ~10 s)
+    # time to finish on SIGTERM before docker SIGKILLs.  Without this,
+    # Celery's prefork pool gets killed mid-LP-solve and acks_late can't
+    # reliably requeue (Layer D test finding, 2026-05-04).
+    stop_grace_period: 15m
     networks:
       - default
       - bioseed_network
