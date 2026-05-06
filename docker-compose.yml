@@ -5,7 +5,7 @@ services:
       dockerfile: modelseed-api/Dockerfile
     container_name: modelseed-api-api-1
     ports:
-      - "8000:8000"
+      - "3004:8000"
     volumes:
       - modelseed-jobs:/tmp/modelseed-jobs
     environment:
