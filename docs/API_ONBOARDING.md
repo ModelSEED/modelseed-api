@@ -45,7 +45,7 @@ The ModelSEED API is a Python FastAPI backend for metabolic modeling. It replace
 **What it does NOT do:**
 
 - Does not run long-running computations in-process. Reconstruction, gapfilling, and FBA are dispatched as async jobs (subprocess or Celery) and polled via `GET /api/jobs`.
-- Does not serve the production frontend. A separate Next.js/TypeScript app (built by the frontend team) will consume this API. A lightweight demo dashboard at `/demo/` exists for development testing only.
+- Does not serve the production frontend. The user-facing UI is a separate Next.js/TypeScript app deployed at https://modelseed.org. A lightweight demo dashboard at `/demo/` in this repo exists for development testing only.
 
 ---
 

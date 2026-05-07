@@ -4,7 +4,7 @@ Modern REST API backend for the [ModelSEED](https://modelseed.org) metabolic mod
 
 The API handles model listing, reconstruction, gapfilling, FBA, biochemistry queries, and PATRIC workspace operations. Long-running jobs (model building, gapfilling, FBA) are dispatched to external scripts via subprocess or Celery.
 
-A separate Next.js/TypeScript frontend will be built to replace the current ModelSEED website. This repo includes a lightweight demo dashboard at `/demo/` for development and testing.
+The user-facing frontend is a separate Next.js/TypeScript application maintained by Vibhav, deployed at https://modelseed.org (replaces the legacy Perl ProbModelSEED site). This repo includes a lightweight demo dashboard at `/demo/` for development and testing.
 
 
 ## Quick Start
@@ -330,7 +330,7 @@ Async tools dispatch jobs via subprocess and poll until completion (configurable
 
 The demo dashboard at `/demo/` is a single-page HTML app for testing API functionality during development. It is not the production frontend.
 
-The production frontend will be a separate Next.js/TypeScript application built by the frontend team. The API is designed to be consumed by any HTTP client.
+The production frontend is a separate Next.js/TypeScript application deployed at https://modelseed.org. The API is designed to be consumed by any HTTP client.
 
 Demo features:
 
