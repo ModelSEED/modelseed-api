@@ -111,7 +111,7 @@ Source and data repos are at `/scratch/modelseed/` (group: HenryLab, mode: 770).
 cd /scratch/modelseed && docker compose -f modelseed-api/docker-compose.yml build --no-cache api && docker compose -f modelseed-api/docker-compose.yml up -d
 ```
 
-For troubleshooting, restart procedures, and common issues, see **[docs/OPS_RUNBOOK.md](docs/OPS_RUNBOOK.md)**.
+For troubleshooting, restart procedures, Celery worker operations, and incident response, see the **operations runbook** in the private sibling repo: [`ModelSEED/modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops). It contains internal infrastructure details (hostnames, container names, Redis/queue mechanics) that are kept off the public repo. To get read access, ask Chris Henry or Jose Faria.
 
 ### 4. Get a PATRIC token
 
