@@ -99,9 +99,11 @@ The API is deployed on poplar via Docker:
 
 | URL | Description |
 |-----|-------------|
-| http://poplar.cels.anl.gov:8000/demo/ | Demo dashboard |
-| http://poplar.cels.anl.gov:8000/docs | Swagger API docs |
-| http://poplar.cels.anl.gov:8000/api/health | Health check |
+| http://poplar.cels.anl.gov:3004/demo/ | Demo dashboard |
+| http://poplar.cels.anl.gov:3004/docs | Swagger API docs |
+| http://poplar.cels.anl.gov:3004/api/health | Health check |
+
+The container listens on port 8000 internally; the host publishes it on **3004** (set in `docker-compose.yml`). Frontend traffic flows through `staging.modelseed.org/PMS/` → nginx → `poplar:3004`.
 
 Source and data repos are at `/scratch/modelseed/` (group: HenryLab, mode: 770). To redeploy after code changes:
 

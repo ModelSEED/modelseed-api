@@ -16,10 +16,14 @@ All repos and Docker files live under `/scratch/modelseed/`. The directory has g
 
 ```bash
 # Quick health check (from anywhere with network access)
-curl -s http://poplar.cels.anl.gov:8000/api/health
+curl -s http://poplar.cels.anl.gov:3004/api/health
 
 # Expected: {"status":"ok","version":"0.1.0"}
 # If no response or connection refused → service is down
+
+# Note: the container listens on 8000 internally; the host publishes it
+# on 3004. External traffic uses :3004; anything `docker exec`'d into
+# the container uses :8000.
 ```
 
 ```bash
@@ -76,7 +80,7 @@ This means most transient failures (OOM, unhandled exception, network blip) will
 
 - Docker daemon itself crashing or not starting after reboot
 - Disk full (container can't write job state or logs)
-- Port 8000 already in use by another process
+- Host port 3004 already in use by another process
 - Code bugs that cause the health endpoint itself to fail (infinite restart loop)
 - Network-level issues (firewall, DNS) blocking external access while container is healthy internally
 
@@ -106,18 +110,23 @@ docker logs --tail 50 modelseed-api-api-1
 # Common causes:
 # - "ModuleNotFoundError" → dependency repo missing or not cloned to correct branch
 # - "FileNotFoundError: Template file not found" → ModelSEEDTemplates not cloned
-# - "Address already in use" → another process on port 8000
+# - "Address already in use" → another process on host port 3004 (or 8000 inside container)
 ```
 
 ### "Connection refused" but container shows as running
 
 ```bash
-# Check if uvicorn is actually listening
+# Check if uvicorn is actually listening (inside the container, port 8000)
 docker exec modelseed-api-api-1 ss -tlnp | grep 8000
 
-# Check if firewall is blocking
-curl -s http://localhost:8000/api/health  # from poplar itself
+# Check the host-side mapping is in place (port 3004 on poplar)
+ss -tlnp | grep 3004
+
+# From poplar itself, hit the host-published port
+curl -s http://localhost:3004/api/health
 ```
+
+If `:8000` is listening inside but `:3004` is not on the host, the Docker port publish is broken — restart the container.
 
 ### Health check shows "unhealthy" but API works in browser
 
@@ -150,23 +159,23 @@ docker compose -f modelseed-api/docker-compose.yml up -d
 
 ```bash
 # 1. Health check
-curl -s http://poplar.cels.anl.gov:8000/api/health
+curl -s http://poplar.cels.anl.gov:3004/api/health
 
 # 2. Biochem search (no auth needed)
-curl -s "http://poplar.cels.anl.gov:8000/api/biochem/search?query=glucose&type=compounds" | head -c 200
+curl -s "http://poplar.cels.anl.gov:3004/api/biochem/search?query=glucose&type=compounds" | head -c 200
 
 # 3. Demo page loads
-curl -s -o /dev/null -w "%{http_code}" http://poplar.cels.anl.gov:8000/demo/
+curl -s -o /dev/null -w "%{http_code}" http://poplar.cels.anl.gov:3004/demo/
 # Expected: 200
 ```
 
-Or open http://poplar.cels.anl.gov:8000/demo/ in a browser.
+Or open http://poplar.cels.anl.gov:3004/demo/ in a browser.
 
 
 ## Architecture summary
 
 ```
-User → poplar:8000 → Docker container (modelseed-api-api-1)
+User → poplar:3004 → Docker container (modelseed-api-api-1, listening :8000 internally)
                         └── uvicorn → FastAPI app
                               ├── /api/health     (always up if container is running)
                               ├── /api/biochem/*  (no auth, reads ModelSEEDDatabase)
@@ -194,5 +203,5 @@ The container is self-contained — all Python dependencies and data repos are b
 ## Contacts
 
 - **Source code**: https://github.com/ModelSEED/modelseed-api
-- **Swagger docs**: http://poplar.cels.anl.gov:8000/docs
-- **Flower (job monitoring)**: http://poplar.cels.anl.gov:5555/ (when Celery mode is enabled)
+- **Swagger docs**: http://poplar.cels.anl.gov:3004/docs
+- **Flower (job monitoring)**: http://poplar.cels.anl.gov:5555/
