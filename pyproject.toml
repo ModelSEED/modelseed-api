@@ -36,6 +36,19 @@ dev = [
     "httpx>=0.25.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.4.0",
+    # E2E live test suite (see docs/E2E_TEST_PLAN.md)
+    "pytest-html>=4.0.0",
+    "pytest-json-report>=1.5.0",
+    "pytest-xdist>=3.5.0",
+    "pytest-timeout>=2.2.0",
+    "pytest-rerunfailures>=14.0",
+    "tenacity>=8.2.0",
+]
+ui-tests = [
+    "pytest-playwright>=0.5.0",
+]
+load-tests = [
+    "locust>=2.20.0",
 ]
 celery = [
     "celery[redis]>=5.3.0",
@@ -62,4 +75,15 @@ markers = [
     "integration: Tests with filesystem or temp dirs",
     "e2e: Full stack end-to-end tests",
     "live: Requires external services (PATRIC token)",
+    # E2E live suite (see docs/E2E_TEST_PLAN.md)
+    "live_smoke: Sub-5-minute reads, no auth or read-only auth, no jobs",
+    "live_functional: Auth required, exercises every endpoint, no long jobs",
+    "live_biological: Submits real reconstruct/gapfill/FBA jobs and validates biology",
+    "live_ui: Playwright tests against deployed Next.js",
+    "slow: Test takes >60s alone",
+    "flaky_external: Retry-eligible; isolates PATRIC/BV-BRC/SOLR instability",
+    "requires_token: Skip if MODELSEED_TEST_TOKEN env var is unset",
+    "requires_modeling: Needs cobra/modelseedpy ([modeling] extra)",
 ]
+timeout = 60
+timeout_func_only = true

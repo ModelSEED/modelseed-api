@@ -26,6 +26,8 @@ env/
 .coverage.*
 htmlcov/
 .pytest_cache/
+tests/live/reports/*
+!tests/live/reports/.gitkeep
 
 # Jobs
 /tmp/modelseed-jobs/
