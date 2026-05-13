@@ -2,6 +2,11 @@
 
 Converts workspace model objects to CobraPy Model objects,
 then uses cobra.io for standard format export.
+
+The cobra import is deferred to function bodies so that importing this
+module (and therefore loading the FastAPI app) does not require the
+[modeling] extras to be installed. Endpoints that actually invoke export
+will fail at call time with a clear ImportError if cobra is missing.
 """
 
 from __future__ import annotations
@@ -9,15 +14,15 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import cobra
-import cobra.io
+if TYPE_CHECKING:  # pragma: no cover - type-checking only
+    import cobra
 
 logger = logging.getLogger(__name__)
 
 
-def _model_obj_to_cobra(model_obj: dict, model_id: str = "model") -> cobra.Model:
+def _model_obj_to_cobra(model_obj: dict, model_id: str = "model") -> "cobra.Model":
     """Convert a workspace model dict to a cobra Model via FBAModelBuilder.
 
     Uses cobrakbase's FBAModelBuilder which correctly handles compartments,
@@ -37,7 +42,7 @@ def _model_obj_to_cobra(model_obj: dict, model_id: str = "model") -> cobra.Model
     return model
 
 
-def get_cobra_model(model_ref: str, ws, model_obj: dict | None = None) -> cobra.Model:
+def get_cobra_model(model_ref: str, ws, model_obj: dict | None = None) -> "cobra.Model":
     """Get a cobra Model, preferring the saved cobra_model sub-object.
 
     The cobra_model sub-object (saved during reconstruction/gapfilling)
@@ -49,6 +54,8 @@ def get_cobra_model(model_ref: str, ws, model_obj: dict | None = None) -> cobra.
         ws: Storage service instance
         model_obj: Pre-fetched workspace model dict (optional, avoids re-fetch)
     """
+    import cobra.io  # deferred so module-level import doesn't require cobra
+
     # Try saved cobra_model first (lossless)
     try:
         result = ws.get({"objects": [f"{model_ref}/cobra_model"]})
@@ -78,6 +85,8 @@ def get_cobra_model(model_ref: str, ws, model_obj: dict | None = None) -> cobra.
 
 def export_sbml(model_obj: dict, model_id: str = "model") -> str:
     """Export model as SBML XML string."""
+    import cobra.io
+
     cobra_model = _model_obj_to_cobra(model_obj, model_id)
     with tempfile.NamedTemporaryFile(suffix=".xml", mode="w", delete=True) as f:
         cobra.io.write_sbml_model(cobra_model, f.name)
@@ -87,5 +96,7 @@ def export_sbml(model_obj: dict, model_id: str = "model") -> str:
 
 def export_cobra_json(model_obj: dict, model_id: str = "model") -> dict:
     """Export model as CobraPy JSON dict."""
+    import cobra.io
+
     cobra_model = _model_obj_to_cobra(model_obj, model_id)
     return cobra.io.model_to_dict(cobra_model)
