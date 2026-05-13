@@ -367,6 +367,8 @@ def reconstruct(
     token: str,
     genome: str = "",
     genome_fasta: str | None = None,
+    rast_job_id: str | None = None,
+    rast_genome_id: str | None = None,
     template_type: str = "auto",
     atp_safe: bool = True,
     gapfill: bool = False,
@@ -376,14 +378,23 @@ def reconstruct(
     genome_id: str = "",
     media_ref: str | None = None,
 ):
-    """Build a metabolic model from a BV-BRC genome or protein FASTA.
+    """Build a metabolic model from one of three input modes.
+
+    Three input modes (mutually exclusive, exactly one resolves):
+      1. **BV-BRC genome ID** (default): pulls the genome via BV-BRC API,
+         converts to MSGenome, runs reconstruction. `genome` is the BV-BRC
+         genome ID (e.g. "83332.12").
+      2. **Protein FASTA** (when `genome_fasta` is set): uses MSBuilder
+         directly with annotate_with_rast. `genome` becomes a display name.
+      3. **RAST job** (when `rast_job_id` is set): fetches the already-
+         annotated genome via MSSS getRastGenomeData, translates to KBase
+         Genome dict, feeds into reconstruction. `rast_genome_id` is also
+         required to pick the genome inside the RAST job. `genome` is a
+         display name. RAST token (the request `token`) is passed to MSSS.
 
     When template_type is "auto" (default), the genome classifier auto-detects
     the organism type (gram-neg, gram-pos, archaea). Users can bypass the
     classifier by specifying "gn", "gp", or "ar" explicitly.
-
-    When genome_fasta is provided, uses ModelSEEDpy MSBuilder directly
-    (RAST annotation + model build) instead of the BV-BRC API pipeline.
     """
     # Resolve parameter aliases
     genome_id = genome or genome_id
@@ -394,7 +405,11 @@ def reconstruct(
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
 
-    # Compute default output path from username + genome ID
+    # When rast_job_id is set, the saved model should be named after the RAST
+    # genome, not the user-supplied display name.
+    output_id_for_path = rast_genome_id if rast_job_id else genome_id
+
+    # Compute default output path from username + ID
     if not output_path:
         username = ""
         for part in token.split("|"):
@@ -402,7 +417,7 @@ def reconstruct(
                 username = part[3:]
                 break
         if username:
-            output_path = f"/{username}/modelseed/{genome_id}"
+            output_path = f"/{username}/modelseed/{output_id_for_path}"
 
     # Load template: defer when "auto" (classifier will pick the right one)
     self.update_state(state="PROGRESS", meta={"status": "Loading templates..."})
@@ -411,7 +426,76 @@ def reconstruct(
     else:
         gs_template_obj = _load_template(template_type)
 
-    if genome_fasta:
+    if rast_job_id:
+        # RAST-job path: fetch annotated genome via MSSS, translate, run
+        # the same reconstruction as BV-BRC. Skips both BV-BRC fetch and
+        # FASTA re-annotation; the genome already has functions assigned.
+        if not rast_genome_id:
+            raise ValueError(
+                "rast_genome_id is required when rast_job_id is set"
+            )
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": f"Fetching RAST genome {rast_genome_id}..."},
+        )
+        from modelseed_api.services.rast_service import RastService
+        from kbutillib import MSReconstructionUtils
+
+        kwargs = _init_kwargs(token)
+        rast_svc = RastService()
+        kbase_genome = rast_svc.get_genome(
+            rast_token=token,
+            genome_id=rast_genome_id,
+            job_id=rast_job_id,
+        )
+
+        organism_name = kbase_genome.get("scientific_name", "")
+        taxonomy = kbase_genome.get("taxonomy", "")
+        domain = kbase_genome.get("domain", "")
+
+        # Same conversion + build path as the BV-BRC branch from here.
+        self.update_state(state="PROGRESS", meta={"status": "Converting genome..."})
+        recon = MSReconstructionUtils(**kwargs)
+        genome = recon.get_msgenome_from_dict(kbase_genome)
+
+        core_template = _load_template("core")
+
+        class_name = None
+        resolved_type = template_type
+        if template_type == "auto":
+            self.update_state(state="PROGRESS", meta={"status": "Classifying genome..."})
+            class_name, resolved_type = _classify_genome(genome)
+            gs_template_obj = _load_template(resolved_type)
+            logger.info(
+                "Auto-classified RAST genome as %s, using template %s",
+                class_name,
+                resolved_type,
+            )
+
+        self.update_state(state="PROGRESS", meta={"status": "Building model..."})
+        output, mdlutl = recon.build_metabolic_model(
+            genome=genome,
+            genome_classifier=None,
+            core_template=core_template,
+            gs_template_obj=gs_template_obj,
+            gs_template=resolved_type,
+            atp_safe=atp_safe,
+        )
+        if class_name:
+            output["Class"] = class_name
+
+        if mdlutl is None:
+            return {
+                "status": "failed",
+                "error": "Reconstruction returned no model",
+                "output": output,
+            }
+
+        # Override genome_id used downstream so saved metadata reflects the
+        # RAST genome rather than the user-supplied display name.
+        genome_id = rast_genome_id
+
+    elif genome_fasta:
         # ── FASTA path: MSGenome + MSBuilder (no BV-BRC API) ──
         self.update_state(state="PROGRESS", meta={"status": "Parsing FASTA..."})
         from modelseedpy.core.msgenome import MSGenome, parse_fasta_str

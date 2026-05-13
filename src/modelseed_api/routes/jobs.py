@@ -79,6 +79,9 @@ async def reconstruct_model(
     }
     if request.genome_fasta:
         params["genome_fasta"] = request.genome_fasta
+    if request.rast_job_id:
+        params["rast_job_id"] = request.rast_job_id
+        params["rast_genome_id"] = request.rast_genome_id
     job_id = _dispatcher.dispatch(
         app="ModelReconstruction",
         parameters=params,

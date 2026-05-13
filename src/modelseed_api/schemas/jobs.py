@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Task(BaseModel):
@@ -34,15 +34,52 @@ class SubmitJobRequest(BaseModel):
 
 
 class ReconstructionRequest(BaseModel):
-    """Request to build a model from a genome."""
+    """Request to build a model from a genome.
 
-    genome: str = Field(min_length=1)  # BV-BRC genome ID (e.g., "83332.12") or display name when using genome_fasta
-    genome_fasta: Optional[str] = None  # Protein FASTA content (skips BV-BRC lookup)
-    template_type: str = "auto"  # auto, gn, gp, ar, grampos, gramneg, archaea
+    Three input modes (mutually exclusive, exactly one must be primary):
+      - `genome`: BV-BRC genome ID (e.g. "83332.12"). Default path.
+      - `genome_fasta`: protein FASTA content. Skips BV-BRC lookup; submits
+        to RAST for annotation. `genome` is treated as a display name.
+      - `rast_job_id`: ID of an existing RAST annotation job. Skips both
+        BV-BRC lookup and RAST submission; fetches the already-annotated
+        genome via MSSS and feeds it directly into reconstruction.
+
+    The `genome` field is required (BV-BRC ID or display name). When
+    `genome_fasta` or `rast_job_id` is set, `genome` is just a label.
+    """
+
+    genome: str = Field(min_length=1)
+    genome_fasta: Optional[str] = None
+    rast_job_id: Optional[str] = Field(default=None, min_length=1)
+    rast_genome_id: Optional[str] = Field(default=None, min_length=1)
+    template_type: str = "auto"
     atp_safe: bool = True
-    gapfill: bool = False  # gapfill after reconstruction
-    media: Optional[str] = None  # media workspace ref for gapfilling
-    output_path: Optional[str] = None  # workspace path for output model
+    gapfill: bool = False
+    media: Optional[str] = None
+    output_path: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_input_modes(self) -> "ReconstructionRequest":
+        """At most ONE of (genome_fasta, rast_job_id) may be set.
+
+        `genome` is always required (used as label even when overridden by
+        FASTA or RAST paths). The other two are mutually exclusive: combining
+        them would mean ambiguous source-of-truth for the genome.
+        """
+        if self.genome_fasta is not None and self.rast_job_id is not None:
+            raise ValueError(
+                "genome_fasta and rast_job_id are mutually exclusive "
+                "(provide at most one)"
+            )
+        # When rast_job_id is set, rast_genome_id is also required so we
+        # know which RAST genome inside the job to fetch. (A single RAST
+        # job can in principle annotate multiple genomes; we need both ids.)
+        if self.rast_job_id is not None and not self.rast_genome_id:
+            raise ValueError(
+                "rast_genome_id is required when rast_job_id is set "
+                "(the RAST genome ID inside the job, e.g. '85962.43')"
+            )
+        return self
 
 
 class GapfillRequest(BaseModel):

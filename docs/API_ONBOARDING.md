@@ -1078,13 +1078,27 @@ Each object is `[path, type, metadata_dict, data_string]`.
 
 ### RAST
 
-Legacy RAST (Rapid Annotation using Subsystem Technology) job listing. Replaces a small slice of the retired `MSSeedSupportServer`. Only enabled when the API is configured to talk to the RAST MySQL database.
+RAST (Rapid Annotation using Subsystem Technology) integration. Two endpoints:
 
-#### `GET /api/rast/jobs` -- List User's RAST Annotation Jobs
+1. **`GET /api/rast/jobs`** lists a user's RAST annotation jobs (queries `RastProdJobCache` MySQL).
+2. **`GET /api/rast/genome`** fetches an annotated genome from a specific RAST job (wraps MSSeedSupportServer's `getRastGenomeData` over JSON-RPC and translates the result into a KBase Genome dict).
+
+Together they support the "Build Model from RAST job" workflow:
+
+```
+1. User sees their RAST jobs:               GET /api/rast/jobs
+2. User picks a job and clicks Build:       POST /api/jobs/reconstruct
+                                              { genome: "<display name>",
+                                                rast_job_id: "<job_id>",
+                                                rast_genome_id: "<genome_id>" }
+   (which internally does:                   GET /api/rast/genome → translate → reconstruct)
+```
+
+#### `GET /api/rast/jobs`: list user's RAST annotation jobs
 
 Queries the `RastProdJobCache` MySQL database for the authenticated user's annotation jobs.
 
-**Auth:** PATRIC token (the username from the token is matched against the RAST job owner).
+**Auth:** PATRIC or RAST token (the `un=` field is matched against the RAST job owner).
 
 **Query Parameters:** none.
 
@@ -1108,11 +1122,49 @@ Queries the `RastProdJobCache` MySQL database for the authenticated user's annot
 
 | Code | Meaning |
 |------|---------|
-| 503 | RAST database not configured (no `MODELSEED_RAST_DB_HOST` set) — endpoint is effectively disabled. |
-| 503 | `pymysql` not installed in the container. |
-| 502 | RAST database query failed (network, auth, or schema error). |
+| 503 | RAST database not configured (no `MODELSEED_RAST_DB_HOST` set) |
+| 503 | `pymysql` not installed in the container |
+| 502 | RAST database query failed (network, auth, or schema error) |
 
-This endpoint is optional; if your deployment doesn't need legacy RAST job listing, leave `MODELSEED_RAST_DB_HOST` unset and clients will get HTTP 503.
+This endpoint is optional; if your deployment doesn't have the RAST DB credentials set, clients get HTTP 503.
+
+#### `GET /api/rast/genome`: fetch an annotated RAST genome
+
+Fetches the actual annotated genome data for a RAST job and returns it as a KBase Genome dict ready to feed into model reconstruction. Wraps MSSS `MSSeedSupportServer.getRastGenomeData` over JSON-RPC and runs the response through a pure-function translator that mirrors the shape `BVBRCUtils.build_kbase_genome_from_api()` produces.
+
+**Auth:** RAST token only. PATRIC tokens are rejected by MSSS upstream and the endpoint returns 401 with a clear message.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `genome_id` | string | yes | The RAST genome ID (e.g. `"85962.43"`) |
+| `job_id` | string | no | The RAST job ID for traceability. If omitted, derived from MSSS's `source` field |
+
+**Response:** A KBase Genome dict (~25 top-level fields). Same shape as the genome dict the BV-BRC path produces, so downstream reconstruction code is unchanged. Top-level fields include `id`, `scientific_name`, `domain`, `taxonomy`, `genetic_code`, `dna_size`, `num_contigs`, `contig_ids`, `contig_lengths`, `gc_content`, `md5`, `molecule_type`, `source`, `source_id`, `features` (list), `non_coding_features` (list), `cdss` (list), `feature_counts` (dict), `genome_tiers`, `warnings`.
+
+**Error responses:**
+
+| Code | Meaning |
+|---|---|
+| 401 | Missing token, or PATRIC token used (MSSS returns "Username not found") |
+| 422 | Missing required `genome_id` query param |
+| 502 | MSSS returned an error (e.g. genome not found in any RAST job) |
+| 503 | `MODELSEED_MSSS_URL` not configured |
+
+#### `POST /api/jobs/reconstruct` with `rast_job_id` (third input mode)
+
+The reconstruct endpoint accepts three mutually-exclusive input modes:
+
+| Mode | Required fields | Behavior |
+|---|---|---|
+| BV-BRC ID | `genome` (genome ID) | Fetches genome from BV-BRC API, runs reconstruction |
+| FASTA | `genome` (display name), `genome_fasta` (protein FASTA) | Submits to RAST for annotation, then reconstructs |
+| RAST job | `genome` (display name), `rast_job_id`, `rast_genome_id` | Fetches already-annotated genome via MSSS, skips re-annotation, reconstructs |
+
+In RAST job mode, `genome` is just a label (used for error messages and saved metadata); the actual genome ID used for the workspace path is `rast_genome_id`.
+
+Schema enforces mutual exclusion: providing both `genome_fasta` and `rast_job_id` fails with HTTP 422.
 
 ---
 

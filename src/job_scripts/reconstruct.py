@@ -77,6 +77,8 @@ def main():
 
     genome_id = params.get("genome", "")
     genome_fasta = params.get("genome_fasta")
+    rast_job_id = params.get("rast_job_id")
+    rast_genome_id = params.get("rast_genome_id")
     template_type = params.get("template_type", "auto")
     atp_safe = params.get("atp_safe", True)
     gapfill = params.get("gapfill", False)
@@ -86,16 +88,22 @@ def main():
     if not genome_id:
         raise ValueError("genome is required")
 
-    # Compute default output path from username + genome ID
+    if rast_job_id and not rast_genome_id:
+        raise ValueError("rast_genome_id is required when rast_job_id is set")
+
+    # When rast_job_id is set, the saved model should be named after the
+    # RAST genome rather than the user-supplied display name.
+    output_id_for_path = rast_genome_id if rast_job_id else genome_id
+
+    # Compute default output path from username + ID
     if not output_path:
-        # Extract username from token: "un=user@patricbrc.org|..."
         username = ""
         for part in args.token.split("|"):
             if part.startswith("un="):
                 username = part[3:]
                 break
         if username:
-            output_path = f"/{username}/modelseed/{genome_id}"
+            output_path = f"/{username}/modelseed/{output_id_for_path}"
     if ":" in genome_id:
         genome_id = genome_id.split(":", 1)[1]
 
@@ -118,8 +126,82 @@ def main():
         else:
             gs_template_obj = _load_template(template_type)
 
-        if genome_fasta:
-            # ── FASTA path ──
+        if rast_job_id:
+            # RAST-job path: fetch annotated genome via MSSS, translate,
+            # then run the same reconstruction as BV-BRC.
+            from modelseed_api.services.rast_service import RastService
+            from kbutillib import MSReconstructionUtils
+
+            update_job(
+                job_file, {"progress": f"Fetching RAST genome {rast_genome_id}..."}
+            )
+            kwargs = dict(
+                config_file=False,
+                token_file=None,
+                kbase_token_file=None,
+                token={"patric": args.token, "kbase": "unused"},
+                modelseed_path=settings.modelseed_db_path,
+                cb_annotation_ontology_api_path=settings.cb_annotation_ontology_api_path,
+            )
+            rast_svc = RastService()
+            kbase_genome = rast_svc.get_genome(
+                rast_token=args.token,
+                genome_id=rast_genome_id,
+                job_id=rast_job_id,
+            )
+
+            organism_name = kbase_genome.get("scientific_name", "")
+            taxonomy = kbase_genome.get("taxonomy", "")
+            domain = kbase_genome.get("domain", "")
+
+            update_job(job_file, {"progress": "Converting genome..."})
+            recon = MSReconstructionUtils(**kwargs)
+            genome = recon.get_msgenome_from_dict(kbase_genome)
+
+            core_template = _load_template("core")
+
+            resolved_type = template_type
+            class_name = None
+            if template_type == "auto":
+                update_job(job_file, {"progress": "Classifying genome..."})
+                class_name, resolved_type = _classify_genome(genome)
+                gs_template_obj = _load_template(resolved_type)
+                print(
+                    f"Auto-classified RAST genome as {class_name}, "
+                    f"using template {resolved_type}"
+                )
+
+            update_job(job_file, {"progress": "Building model..."})
+            output, mdlutl = recon.build_metabolic_model(
+                genome=genome,
+                genome_classifier=None,
+                core_template=core_template,
+                gs_template_obj=gs_template_obj,
+                gs_template=resolved_type,
+                atp_safe=atp_safe,
+            )
+            if class_name:
+                output["Class"] = class_name
+
+            if mdlutl is None:
+                result_data = {
+                    "status": "skipped",
+                    "comments": output.get("Comments", []),
+                }
+                update_job(job_file, {
+                    "status": "completed",
+                    "completed_time": now(),
+                    "result": result_data,
+                })
+                print(f"Model skipped: {result_data}")
+                return
+
+            # Override genome_id used downstream so saved metadata reflects
+            # the RAST genome rather than the user-supplied display name.
+            genome_id = rast_genome_id
+
+        elif genome_fasta:
+            # FASTA path
             update_job(job_file, {"progress": "Parsing FASTA..."})
             from modelseedpy.core.msgenome import MSGenome, parse_fasta_str
             from modelseedpy.core.msbuilder import MSBuilder
