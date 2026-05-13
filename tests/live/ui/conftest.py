@@ -78,76 +78,49 @@ def page(context):
 
 
 def _auth_via_storage(context, base_url: str, token: str) -> None:
-    """Pre-bake the auth token into the browser context so the frontend
+    """Pre-bake the PATRIC token into the browser context so the frontend
     sees the user as logged in without scripting the BV-BRC login form.
 
-    THE EXACT STORAGE LOCATION IS CURRENTLY UNKNOWN. Vibhav's Next.js app
-    likely stores the PATRIC token in one of these places. To find out:
+    Vibhav's Next.js frontend stores auth in `localStorage["auth"]` as a
+    JSON-stringified object with this exact shape:
 
-      1. Open https://modelseed.org in Chrome
-      2. Log in with your real PATRIC account
-      3. DevTools → Application → Storage
-      4. Inspect: Cookies, Local Storage, Session Storage
-      5. Find the entry that contains the `un=...|tokenid=...|sig=...` string
-      6. Update the storage_keys list below with the actual key name(s)
+        {
+          "user_id": "<username>",      // e.g. "jplfaria@patricbrc.org"
+          "token":   "<full token>",    // un=...|tokenid=...|sig=... format
+          "method":  "PATRIC" | "RAST"
+        }
 
-    Until that's filled in, every authenticated UI test will skip with the
-    `auth_storage_unknown` message rather than silently testing as logged-out.
+    Verified by reading the production JS bundle (012n0aak-5mz_.js exports
+    AUTH_STORAGE_KEY="auth", persistAuth, getStoredAuth, clearAuth). If the
+    frontend changes its auth storage in the future, update the JSON shape
+    or key name here.
     """
-    storage_keys = [
-        # (kind, key) — kind is "cookie" or "localStorage" or "sessionStorage"
-        # ("localStorage", "patric.token"),
-        # ("cookie", "P3Auth"),
-    ]
-    custom = os.environ.get("MODELSEED_TEST_UI_AUTH_KEY")
-    if custom:
-        # Format: "kind:key" e.g. "localStorage:patric.token" or "cookie:P3Auth"
-        try:
-            kind, key = custom.split(":", 1)
-            storage_keys.append((kind.strip(), key.strip()))
-        except ValueError:
-            pytest.fail(
-                f"Invalid MODELSEED_TEST_UI_AUTH_KEY={custom!r}. "
-                "Expected format: 'kind:key' e.g. 'localStorage:patric.token'"
-            )
+    import json
 
-    if not storage_keys:
-        pytest.skip(
-            "auth_storage_unknown: don't know where to inject the PATRIC token "
-            "for the live frontend. Set MODELSEED_TEST_UI_AUTH_KEY=kind:key "
-            "(e.g. 'localStorage:patric.token') after inspecting where Vibhav's "
-            "app stores the token. See conftest._auth_via_storage docstring."
-        )
+    # Extract username and detect token method from the token itself.
+    # PATRIC tokens have un=...@patricbrc.org; RAST tokens have un=...
+    # without the @ suffix, and SigningSubject points to rast.nmpdr.org.
+    username = "unknown"
+    method = "PATRIC"
+    for part in token.split("|"):
+        if part.startswith("un="):
+            username = part[3:]
+        elif part.startswith("SigningSubject=") and "rast.nmpdr.org" in part:
+            method = "RAST"
 
-    # Inject by visiting a blank page on the same origin first (required
-    # to set localStorage) then setting cookies/storage.
+    auth_payload = json.dumps({
+        "user_id": username,
+        "token": token,
+        "method": method,
+    })
+
+    # Setting localStorage requires a same-origin page to be loaded first.
     page = context.new_page()
     page.goto(base_url)
-    for kind, key in storage_keys:
-        if kind == "localStorage":
-            page.evaluate(
-                "([k, v]) => window.localStorage.setItem(k, v)",
-                [key, token],
-            )
-        elif kind == "sessionStorage":
-            page.evaluate(
-                "([k, v]) => window.sessionStorage.setItem(k, v)",
-                [key, token],
-            )
-        elif kind == "cookie":
-            from urllib.parse import urlparse
-
-            host = urlparse(base_url).hostname or "modelseed.org"
-            context.add_cookies([{
-                "name": key,
-                "value": token,
-                "domain": host,
-                "path": "/",
-                "httpOnly": False,
-                "secure": True,
-            }])
-        else:
-            pytest.fail(f"Unknown auth-storage kind: {kind!r}")
+    page.evaluate(
+        "v => window.localStorage.setItem('auth', v)",
+        auth_payload,
+    )
     page.close()
 
 

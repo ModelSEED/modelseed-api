@@ -26,28 +26,50 @@ def test_media_mine_returns_list_or_empty(live_client: httpx.Client) -> None:
     assert_status(r, [200, 404])
 
 
-def test_media_export_complete_has_glucose(live_client: httpx.Client) -> None:
-    """F11: Exporting Complete media returns a media object containing glucose."""
+def test_media_export_complete_is_empty_by_design(live_client: httpx.Client) -> None:
+    """F11a: PATRIC's Complete media is intentionally an empty TSV (just the
+    header row). PATRIC convention: empty media file = all exchanges open;
+    model loading code interprets it. Verify our endpoint returns the right
+    shape with `compounds: []` rather than erroring out on the empty file.
+    """
     r = live_client.get(
         "/api/media/export",
         params={"ref": "/chenry/public/modelsupport/media/Complete"},
     )
-    # Complete media may not exist on every deployment; accept 404 too.
     if r.status_code == 404:
         pytest.skip("Complete media not available on this deployment")
     assert_status(r, 200)
     media = r.json()
-    if isinstance(media, dict) and "compounds" in media:
-        compounds = media["compounds"]
-        # cpd00027 is glucose. Complete media should at least open all exchanges,
-        # but Complete here is a *defined* media — so glucose should be in it.
-        ids = set()
-        for c in compounds:
-            cid = c.get("compound_id") if isinstance(c, dict) else (c[0] if c else None)
-            if cid:
-                ids.add(cid)
-        # Soft check: just verify it has compounds at all.
-        assert len(ids) > 0, "Complete media has no compounds"
+    assert isinstance(media, dict)
+    assert "compounds" in media
+    assert media["compounds"] == [], (
+        f"PATRIC Complete media is supposed to be empty (open-exchanges sentinel), "
+        f"got {len(media['compounds'])} compounds"
+    )
+
+
+def test_media_export_glucose_minimal_has_compounds(live_client: httpx.Client) -> None:
+    """F11b: Carbon-D-Glucose is a real defined media with compounds in it."""
+    r = live_client.get(
+        "/api/media/export",
+        params={"ref": "/chenry/public/modelsupport/media/Carbon-D-Glucose"},
+    )
+    if r.status_code == 404:
+        pytest.skip("Carbon-D-Glucose media not available on this deployment")
+    assert_status(r, 200)
+    media = r.json()
+    assert isinstance(media, dict)
+    compounds = media.get("compounds") or []
+    assert len(compounds) > 0, "Carbon-D-Glucose should have compounds"
+    # Extract IDs from whichever shape the entries come in (dict or tuple).
+    ids = set()
+    for c in compounds:
+        cid = c.get("compound_id") if isinstance(c, dict) else (c[0] if c else None)
+        if cid:
+            ids.add(cid)
+    assert "cpd00027" in ids, (
+        f"Carbon-D-Glucose missing glucose (cpd00027). Got IDs: {sorted(ids)[:10]}"
+    )
 
 
 def test_media_export_missing_returns_404(live_client: httpx.Client) -> None:

@@ -152,19 +152,25 @@ _SECRETS_TO_REDACT: set[str] = set()
 
 
 def pytest_runtest_logreport(report) -> None:  # noqa: D401
-    """Redact secrets from any captured stdout/stderr before they hit reports."""
+    """Redact secrets from any captured output before they hit reports.
+
+    `report.capstdout` and `report.capstderr` are read-only properties
+    computed from `report.sections`; we modify the sections list in place
+    and the properties surface the redacted content. `longrepr` is settable.
+    """
     if not _SECRETS_TO_REDACT:
         return
     secrets = list(_SECRETS_TO_REDACT)
-    if report.capstdout:
+    if report.sections:
         report.sections = [
             (name, _redact(content, secrets)) for name, content in report.sections
         ]
-        report.capstdout = _redact(report.capstdout, secrets)
-    if report.capstderr:
-        report.capstderr = _redact(report.capstderr, secrets)
     if hasattr(report, "longrepr") and report.longrepr:
-        report.longrepr = _redact(str(report.longrepr), secrets)
+        try:
+            report.longrepr = _redact(str(report.longrepr), secrets)
+        except (AttributeError, TypeError):
+            # Some longrepr objects are not assignable; tolerate that.
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -182,7 +188,10 @@ def _client_with_retries(base_url: str, headers: dict | None = None) -> httpx.Cl
     return httpx.Client(
         base_url=base_url,
         headers=headers or {},
-        timeout=httpx.Timeout(30.0, connect=10.0),
+        # Read timeout is generous because workspace recursive ls and
+        # job dispatch can be slow under load. Connect timeout stays
+        # tight — failure to connect at all is what we want to fail fast.
+        timeout=httpx.Timeout(60.0, connect=10.0),
         follow_redirects=True,
     )
 

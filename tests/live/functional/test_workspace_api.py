@@ -40,13 +40,26 @@ def test_ws_ls_recursive(
     assert_status(r, [200, 404])
 
 
-def test_ws_ls_nonexistent_path(live_client: httpx.Client) -> None:
-    """F44: ls of a definitely-nonexistent user path returns 403 or 404."""
+def test_ws_ls_nonexistent_path_returns_empty_listing(live_client: httpx.Client) -> None:
+    """F44: ls of a nonexistent path returns 200 with an empty dict.
+
+    This is PATRIC's design — `ls` doesn't error on missing paths, it
+    returns `{}`. Our proxy passes that through unchanged, which is the
+    right behavior for a transparent proxy.
+    """
     r = live_client.post(
         "/api/workspace/ls",
         json={"paths": ["/__definitely_no_such_user__/"]},
     )
-    assert_status(r, [403, 404, 502])
+    assert_status(r, [200, 403, 404, 502])
+    if r.status_code == 200:
+        # Whatever the path key looks like, the listing should be empty.
+        payload = r.json()
+        assert isinstance(payload, dict)
+        for path, entries in payload.items():
+            assert entries == [] or entries is None, (
+                f"Expected empty listing for nonexistent path, got {len(entries)} entries"
+            )
 
 
 def test_ws_create_folder_then_delete(
