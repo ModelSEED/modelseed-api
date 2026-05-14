@@ -108,7 +108,12 @@ The container listens on port 8000 internally; the host publishes it on **3004**
 Source and data repos are at `/scratch/modelseed/` (group: HenryLab, mode: 770). To redeploy after code changes:
 
 ```bash
-cd /scratch/modelseed && docker compose -f modelseed-api/docker-compose.yml build --no-cache api && docker compose -f modelseed-api/docker-compose.yml up -d
+cd /scratch/modelseed
+# IMPORTANT: rebuild BOTH api and worker. They share the same Dockerfile
+# but `--no-cache` only rebuilds what you name. Forgetting `worker` leaves
+# the Celery worker on stale code while the API serves new code.
+docker compose -f modelseed-api/docker-compose.yml build --no-cache api worker
+docker compose -f modelseed-api/docker-compose.yml up -d
 ```
 
 For troubleshooting, restart procedures, Celery worker operations, and incident response, see the **operations runbook** in the private sibling repo: [`ModelSEED/modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops). It contains internal infrastructure details (hostnames, container names, Redis/queue mechanics) that are kept off the public repo. To get read access, ask Chris Henry or Jose Faria.
