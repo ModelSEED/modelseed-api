@@ -1,22 +1,23 @@
 """RAST integration service.
 
-Two responsibilities:
+Both methods wrap MSSeedSupportServer (MSSS) over JSON-RPC:
 
-1. **`RastService.list_jobs()`** queries the legacy RastProdJobCache MySQL
-   database directly (replaces MSSS `list_rast_jobs`).
-2. **`RastService.get_genome()`** wraps MSSS `getRastGenomeData` over JSON-RPC
-   and translates the response into a KBase Genome dict ready for our
-   reconstruction pipeline (replaces the FIGV / kb_seed Perl path that we
-   cannot reach from poplar).
+1. **`RastService.list_jobs()`** wraps `list_rast_jobs`. We tried direct
+   MySQL access from poplar but `bio-admin.cels.anl.gov:3306` is firewalled.
+   MSSS reaches the DB fine from branch, so we proxy through it.
+2. **`RastService.get_genome()`** wraps `getRastGenomeData` and translates
+   the response into a KBase Genome dict ready for our reconstruction
+   pipeline.
+
+This service is a pure proxy. Eventually MSSS itself can be retired
+(it's on EOL hardware) and we'd port the logic, but that requires moving
+the underlying RAST data files to a host poplar can reach.
 
 The translator is implemented as a module-level pure function
 `translate_rast_to_kbase_genome()` so it can be unit-tested against saved
-fixture data without touching MSSS at all.
-
-Target output shape mirrors `BVBRCUtils.build_kbase_genome_from_api()` in
-KBUtilLib (`src/kbutillib/bvbrc_utils.py:170`). The reconstruction pipeline
-calls `MSReconstructionUtils.get_msgenome_from_dict()` on whatever this
-function returns; that helper does the cobrakbase wrapping.
+fixture data without touching MSSS at all. Output shape mirrors
+`BVBRCUtils.build_kbase_genome_from_api()` in KBUtilLib
+(`src/kbutillib/bvbrc_utils.py:170`).
 """
 
 from __future__ import annotations
@@ -40,60 +41,65 @@ logger = logging.getLogger("modelseed_api.rast")
 
 
 class RastService:
-    """Read-only client for legacy RAST data sources."""
+    """Read-only proxy to MSSeedSupportServer."""
 
-    def list_jobs(self, username: str) -> list[dict[str, Any]]:
-        """Return all RAST annotation jobs owned by *username*."""
-        import pymysql
+    def list_jobs(
+        self,
+        rast_token: str,
+        *,
+        timeout: float = 60.0,
+    ) -> list[dict[str, Any]]:
+        """Return all RAST annotation jobs the token's user owns.
 
-        conn = pymysql.connect(
-            host=settings.rast_db_host,
-            port=settings.rast_db_port,
-            user=settings.rast_db_user,
-            password=settings.rast_db_password,
-            database=settings.rast_db_name,
-            connect_timeout=10,
-            read_timeout=30,
-            cursorclass=pymysql.cursors.DictCursor,
+        Wraps MSSS `MSSeedSupportServer.list_rast_jobs`. MSSS uses the
+        `Authorization` header to identify the user; the response is a
+        list-of-list-of-dicts (KBase JSON-RPC style) which we flatten and
+        normalize into our flat list of job dicts.
+
+        Raises:
+            RuntimeError: if MSSS is unreachable or returns an error.
+        """
+        if not settings.modelseed_msss_url:
+            raise RuntimeError(
+                "MSSS URL not configured (set MODELSEED_MSSS_URL); "
+                "cannot list RAST jobs."
+            )
+
+        result = _call_msss_jsonrpc(
+            url=settings.modelseed_msss_url,
+            method="MSSeedSupportServer.list_rast_jobs",
+            params=[{}],
+            token=rast_token,
+            timeout=timeout,
         )
 
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT _id FROM User WHERE login = %s", (username,))
-                row = cur.fetchone()
-                if not row:
-                    return []
-                user_id = row["_id"]
+        # MSSS returns the rows as a single list. Normalize each row's
+        # field types (MSSS gives stringy ints) to match the previous
+        # DB-query shape so existing API consumers don't see a change.
+        if not isinstance(result, list):
+            return []
 
-                cur.execute(
-                    """
-                    SELECT id, owner, project_name, created_on, last_modified,
-                           genome_bp_count, genome_contig_count, genome_id,
-                           genome_name, type
-                    FROM Job
-                    WHERE owner = %s
-                    ORDER BY last_modified DESC
-                    """,
-                    (user_id,),
-                )
-                rows = cur.fetchall()
-        finally:
-            conn.close()
+        def _to_int(v: Any) -> int:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return 0
 
         return [
             {
-                "owner": username,
-                "project": r.get("project_name", ""),
-                "id": str(r.get("id", "")),
-                "creation_time": str(r.get("created_on", "")),
-                "mod_time": str(r.get("last_modified", "")),
-                "genome_size": r.get("genome_bp_count", 0) or 0,
-                "contig_count": r.get("genome_contig_count", 0) or 0,
-                "genome_id": r.get("genome_id", "") or "",
-                "genome_name": r.get("genome_name", "") or "",
-                "type": r.get("type", "") or "",
+                "owner": str(row.get("owner") or ""),
+                "project": str(row.get("project") or row.get("project_name") or ""),
+                "id": str(row.get("id") or ""),
+                "creation_time": str(row.get("creation_time") or row.get("created_on") or ""),
+                "mod_time": str(row.get("mod_time") or row.get("last_modified") or ""),
+                "genome_size": _to_int(row.get("genome_size") or row.get("genome_bp_count")),
+                "contig_count": _to_int(row.get("contig_count") or row.get("genome_contig_count")),
+                "genome_id": str(row.get("genome_id") or ""),
+                "genome_name": str(row.get("genome_name") or ""),
+                "type": str(row.get("type") or ""),
             }
-            for r in rows
+            for row in result
+            if isinstance(row, dict)
         ]
 
     def get_genome(

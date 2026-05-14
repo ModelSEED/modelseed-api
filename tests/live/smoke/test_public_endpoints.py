@@ -117,19 +117,17 @@ def test_public_media_list_nonempty(public_client: httpx.Client) -> None:
     assert count >= 10, f"public media list too small: {count} entries"
 
 
-def test_rast_returns_503_when_unconfigured(public_client: httpx.Client) -> None:
-    """S11: /api/rast/jobs returns 503 if RAST DB is unconfigured (graceful degradation).
+def test_rast_jobs_endpoint_reachable(public_client: httpx.Client) -> None:
+    """S11: /api/rast/jobs is reachable and returns a sensible status code.
 
-    NOTE: this requires *some* token to satisfy the auth dependency. We
-    use a placeholder; the endpoint should still return 503 from the
-    config check before doing real auth work in production. If your live
-    environment has the RAST DB configured, this test will pass via 200
-    or 502 instead — adjust if needed.
+    The endpoint wraps MSSS over JSON-RPC, so behavior depends on:
+      - 503 if MODELSEED_MSSS_URL is unset on the deploy
+      - 401 if MSSS rejects our placeholder token (the most common case)
+      - 502 if MSSS itself errors
+      - 200 if MSSS happens to accept our placeholder (unlikely)
+    All four are valid responses; what we're verifying is that the route
+    is registered and doesn't crash with a 404 or 500.
     """
-    # Send an obviously-fake token; we want the 503 from the config check,
-    # not an upstream auth failure. We accept either 503 (unconfigured) or
-    # 200 (configured) as success — both prove the endpoint is reachable
-    # and doing the right thing for its environment.
     headers = {"Authorization": "un=smoke-test|tokenid=placeholder"}
     r = public_client.get("/api/rast/jobs", headers=headers)
     assert_status(r, [200, 401, 502, 503])

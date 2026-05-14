@@ -16,30 +16,43 @@ logger = logging.getLogger("modelseed_api.routes.rast")
 async def list_rast_jobs(
     user: AuthUser = Depends(get_current_user),
 ) -> Any:
-    """List the authenticated user's legacy RAST annotation jobs.
+    """List the authenticated user's RAST annotation jobs.
 
-    Queries the RastProdJobCache MySQL database.
-    Returns 503 if the RAST database is not configured.
+    Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC.
+
+    Auth: only RAST tokens are accepted by MSSS upstream. PATRIC tokens
+    are rejected with "Username not found"; this endpoint catches that
+    and returns 401 with a clear message.
+
+    Status codes:
+      200: list of job dicts
+      401: missing/invalid token, or PATRIC token used (RAST-only)
+      502: MSSS reachable but returned an error
+      503: MODELSEED_MSSS_URL not configured
     """
-    if not settings.rast_db_host:
+    if not settings.modelseed_msss_url:
         raise HTTPException(
             status_code=503,
-            detail="RAST database not configured (set MODELSEED_RAST_DB_HOST)",
+            detail="MSSS URL not configured (set MODELSEED_MSSS_URL)",
         )
 
     from modelseed_api.services.rast_service import RastService
 
+    svc = RastService()
     try:
-        svc = RastService()
-        return svc.list_jobs(user.username)
-    except ImportError:
-        raise HTTPException(
-            status_code=503,
-            detail="pymysql not installed (pip install pymysql)",
-        )
-    except Exception as e:
-        logger.error("RAST database error: %s", e)
-        raise HTTPException(status_code=502, detail=f"RAST database error: {e}")
+        return svc.list_jobs(rast_token=user.token)
+    except RuntimeError as e:
+        msg = str(e)
+        if "Username not found" in msg:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "MSSS rejected token (use a RAST token, not a PATRIC token, "
+                    "for /api/rast/jobs)"
+                ),
+            )
+        logger.error("MSSS list_rast_jobs failed: %s", msg)
+        raise HTTPException(status_code=502, detail=f"MSSS error: {msg[:300]}")
 
 
 @router.get("/genome")
