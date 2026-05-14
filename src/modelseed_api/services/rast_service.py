@@ -308,12 +308,19 @@ def translate_rast_to_kbase_genome(
             continue
         rast_type = _first(raw_feat.get("TYPE")) or ""
         if rast_type == "peg":
+            cds_id = f"{kb_feat['id']}_CDS_1"
+            # KBase per-feature `cdss` is a list of CDS IDs linking this
+            # gene to its CDS object(s) in the top-level `cdss` array.
+            # cobrakbase 0.3.x reads this strictly; 0.4.x is more lenient.
+            kb_feat["cdss"] = [cds_id]
             coding_features.append(kb_feat)
             cdss.append(_build_cds_from_feature(kb_feat))
             feature_counts["gene"] += 1
             feature_counts["protein_encoding_gene"] += 1
             feature_counts["CDS"] += 1
         else:
+            # Non-coding features get an empty cdss list (still required field).
+            kb_feat["cdss"] = []
             non_coding_features.append(kb_feat)
             kb_type = kb_feat.get("type", "")
             if kb_type in feature_counts:
