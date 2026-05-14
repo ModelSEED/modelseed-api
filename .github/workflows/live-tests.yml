@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.layer == 'smoke' || inputs.layer == 'all')) ||
       github.event.schedule == '0 */6 * * *' ||
       github.event.schedule == '0 4 * * *'
     timeout-minutes: 10
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: smoke
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.layer == 'functional' || inputs.layer == 'all')) ||
       github.event.schedule == '0 4 * * *' ||
       github.event.schedule == '0 6 * * 0'
     timeout-minutes: 30
@@ -128,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: smoke
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.layer == 'ui' || inputs.layer == 'all')) ||
       github.event.schedule == '0 4 * * *'
     timeout-minutes: 30
     steps:
@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: functional
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.layer == 'biological' || inputs.layer == 'all')) ||
       github.event.schedule == '0 6 * * 0'
     timeout-minutes: 120
     steps:
@@ -173,8 +173,14 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-      - name: Install + modeling extras
-        run: pip install -e ".[dev,modeling]"
+      - name: Install git-only modeling deps + dev extras
+        run: |
+          # kbutillib and cobrakbase aren't on PyPI; install from git first so
+          # the [modeling] extra can resolve.
+          pip install \
+            "git+https://github.com/cshenry/KBUtilLib.git@main" \
+            "git+https://github.com/Fxe/cobrakbase.git@master"
+          pip install -e ".[dev,modeling]"
       - name: Run biological layer
         env:
           MODELSEED_TEST_ENV: ${{ inputs.target_env || 'production' }}
