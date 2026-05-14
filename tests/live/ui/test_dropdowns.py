@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import pytest
 
-from tests.live.assertions.ui import collect_console_errors, wait_for_network_idle
+from tests.live.assertions.ui import (
+    collect_console_errors,
+    filter_noise,
+    wait_for_network_idle,
+)
 
 
 def test_publications_year_dropdown_every_option(page, target_env) -> None:
     """U05: select every option in the publications Year dropdown."""
     errors = collect_console_errors(page)
     page.goto(target_env.base_url + "/publications", wait_until="domcontentloaded")
-    wait_for_network_idle(page, timeout_ms=10000)
+    wait_for_network_idle(page)
 
     # Try common dropdown selectors. The actual DOM may vary; we attempt
     # a few and skip if none match, since this is opt-in UI testing and
@@ -64,5 +68,5 @@ def test_publications_year_dropdown_every_option(page, target_env) -> None:
             except Exception as exc:
                 pytest.fail(f"Selecting Year={value!r} failed: {exc}")
 
-    real_errors = [e for e in errors if "googletagmanager" not in e]
+    real_errors = filter_noise(errors)
     assert not real_errors, f"Console errors after dropdown changes: {real_errors}"

@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from tests.live.assertions.ui import collect_console_errors, wait_for_network_idle
+from tests.live.assertions.ui import (
+    collect_console_errors,
+    filter_noise,
+    wait_for_network_idle,
+)
 
 pytestmark = pytest.mark.requires_token
 
@@ -18,7 +22,7 @@ def test_my_models_page_renders(authenticated_page, target_env) -> None:
     """U07: /my-models loads with auth and shows either models or an empty state."""
     errors = collect_console_errors(authenticated_page)
     authenticated_page.goto(target_env.base_url + "/my-models", wait_until="domcontentloaded")
-    wait_for_network_idle(authenticated_page, timeout_ms=15000)
+    wait_for_network_idle(authenticated_page)
 
     body = (authenticated_page.text_content("body") or "").lower()
     # Either the user has models (table renders rows) or empty state ("no models").
@@ -27,7 +31,7 @@ def test_my_models_page_renders(authenticated_page, target_env) -> None:
     )
     assert has_content, "My Models page didn't render expected table or empty state"
 
-    real_errors = [e for e in errors if "googletagmanager" not in e]
+    real_errors = filter_noise(errors)
     assert not real_errors, f"Console errors on /my-models: {real_errors}"
 
 
@@ -40,11 +44,11 @@ def test_my_jobs_page_renders(authenticated_page, target_env) -> None:
     """
     errors = collect_console_errors(authenticated_page)
     authenticated_page.goto(target_env.base_url + "/my-jobs", wait_until="domcontentloaded")
-    wait_for_network_idle(authenticated_page, timeout_ms=15000)
+    wait_for_network_idle(authenticated_page)
 
     body = (authenticated_page.text_content("body") or "").lower()
     has_content = "job" in body
     assert has_content, "My Jobs page didn't render expected content"
 
-    real_errors = [e for e in errors if "googletagmanager" not in e]
+    real_errors = filter_noise(errors)
     assert not real_errors, f"Console errors on /my-jobs: {real_errors}"

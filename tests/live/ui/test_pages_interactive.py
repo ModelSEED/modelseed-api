@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import pytest
 
-from tests.live.assertions.ui import collect_console_errors, wait_for_network_idle
+from tests.live.assertions.ui import (
+    collect_console_errors,
+    filter_noise,
+    wait_for_network_idle,
+)
 
 # All non-auth public pages on modelseed.org (mirrored from the smoke layer).
 PUBLIC_PAGES = [
@@ -29,34 +33,28 @@ PUBLIC_PAGES = [
 
 
 def test_landing_no_console_errors(page, target_env) -> None:
-    """U01: landing page renders with no console errors."""
+    """U01: landing page renders with no app-level console errors."""
     errors = collect_console_errors(page)
     page.goto(target_env.base_url + "/", wait_until="domcontentloaded")
-    wait_for_network_idle(page, timeout_ms=10000)
-    # Filter out errors we know are noise from external scripts (e.g. analytics
-    # 404s, font CDN flakiness). Keep app-level errors.
-    real = [e for e in errors if "googletagmanager" not in e and "fonts.googleapis" not in e]
+    wait_for_network_idle(page)
+    real = filter_noise(errors)
     assert not real, f"Landing page console errors: {real}"
 
 
 @pytest.mark.parametrize("path", PUBLIC_PAGES, ids=lambda p: p.replace("/", "_") or "root")
 def test_pages_no_console_errors_parametrized(page, target_env, path: str) -> None:
-    """U02: every public page renders without console errors."""
+    """U02: every public page renders without app-level console errors."""
     errors = collect_console_errors(page)
     page.goto(target_env.base_url + path, wait_until="domcontentloaded")
-    try:
-        wait_for_network_idle(page, timeout_ms=10000)
-    except Exception:
-        # networkidle can time out on pages with continuous polling; that's fine
-        pass
-    real = [e for e in errors if "googletagmanager" not in e and "fonts.googleapis" not in e]
+    wait_for_network_idle(page)
+    real = filter_noise(errors)
     assert not real, f"Console errors on {path}: {real}"
 
 
 def test_about_version_shows_current_build(page, target_env) -> None:
     """U12: /about/version page shows version info."""
     page.goto(target_env.base_url + "/about/version", wait_until="domcontentloaded")
-    wait_for_network_idle(page, timeout_ms=10000)
+    wait_for_network_idle(page)
     body_text = page.text_content("body") or ""
     # The page lists multiple service URLs and a version number; we just
     # verify the page rendered something recognizable.

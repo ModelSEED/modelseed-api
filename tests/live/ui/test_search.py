@@ -10,6 +10,7 @@ import pytest
 
 from tests.live.assertions.ui import (
     collect_console_errors,
+    filter_noise,
     get_response_count_to,
     wait_for_network_idle,
 )
@@ -23,7 +24,7 @@ def test_biochem_search_typing_triggers_api(page, target_env) -> None:
     want to break the test on every UI restyle.
     """
     page.goto(target_env.base_url + "/biochem/compounds", wait_until="domcontentloaded")
-    wait_for_network_idle(page, timeout_ms=10000)
+    wait_for_network_idle(page)
 
     count_searches = get_response_count_to(page, "biochem/search")
     count_compounds = get_response_count_to(page, "biochem/compounds")
@@ -69,9 +70,9 @@ def test_compound_detail_navigation(page, target_env) -> None:
         target_env.base_url + "/biochem/compounds/cpd00027",
         wait_until="domcontentloaded",
     )
-    wait_for_network_idle(page, timeout_ms=10000)
+    wait_for_network_idle(page)
     body = (page.text_content("body") or "").lower()
     # The page should at minimum mention the compound's ID.
     assert "cpd00027" in body, "Compound detail page does not show cpd00027 ID"
-    real_errors = [e for e in errors if "googletagmanager" not in e]
+    real_errors = filter_noise(errors)
     assert not real_errors, f"Console errors on detail page: {real_errors}"
