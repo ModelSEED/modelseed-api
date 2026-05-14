@@ -21,11 +21,14 @@ from tests.live.assertions.api import (
     poll_job_until_done,
 )
 
-# Same organism, two paths.
-# - BV-BRC: genome ID 85962.43 (resolves to Helicobacter pylori 26695)
-# - RAST:   job 297911 with that same genome inside it
+# Same organism (H. pylori 26695), two annotation sources:
+# - BV-BRC: 85962.47 (1711 CDSs, current PATRIC annotation of the same strain)
+# - RAST:   job 297911 / RAST genome 85962.43 (1687 PEGs, RAST annotation)
+# These are the same biological organism (Helicobacter pylori 26695) annotated
+# by independent pipelines at different times. The RAST genome ID 85962.43 is
+# RAST-only (not in BV-BRC); BV-BRC's most current version is 85962.47.
 ORGANISM = {
-    "bvbrc_id": "85962.43",
+    "bvbrc_id": "85962.47",
     "rast_job_id": "297911",
     "rast_genome_id": "85962.43",
     "display_name": "Helicobacter pylori 26695",
