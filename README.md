@@ -93,30 +93,21 @@ In local mode, no authentication is required. The API accepts requests without a
 | http://localhost:8000/redoc | ReDoc API docs |
 | http://localhost:8000/api/health | Health check |
 
-### Live deployment (poplar)
+### Live API
 
-The API is deployed on poplar via Docker:
+The production API is served at **https://modelseed.org/PMS/**.
 
 | URL | Description |
 |-----|-------------|
-| http://poplar.cels.anl.gov:3004/demo/ | Demo dashboard |
-| http://poplar.cels.anl.gov:3004/docs | Swagger API docs |
-| http://poplar.cels.anl.gov:3004/api/health | Health check |
+| https://modelseed.org/PMS/demo/ | Demo dashboard |
+| https://modelseed.org/PMS/docs | Swagger API docs |
+| https://modelseed.org/PMS/redoc | ReDoc API docs |
+| https://modelseed.org/PMS/api/health | Health check |
+| https://modelseed.org/PMS/openapi.json | OpenAPI spec |
 
-The container listens on port 8000 internally; the host publishes it on **3004** (set in `docker-compose.yml`). Frontend traffic flows through `staging.modelseed.org/PMS/` → nginx → `poplar:3004`.
+The user-facing UI at https://modelseed.org consumes this API.
 
-Source and data repos are at `/scratch/modelseed/` (group: HenryLab, mode: 770). To redeploy after code changes:
-
-```bash
-cd /scratch/modelseed
-# IMPORTANT: rebuild BOTH api and worker. They share the same Dockerfile
-# but `--no-cache` only rebuilds what you name. Forgetting `worker` leaves
-# the Celery worker on stale code while the API serves new code.
-docker compose -f modelseed-api/docker-compose.yml build --no-cache api worker
-docker compose -f modelseed-api/docker-compose.yml up -d
-```
-
-For troubleshooting, restart procedures, Celery worker operations, and incident response, see the **operations runbook** in the private sibling repo: [`ModelSEED/modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops). It contains internal infrastructure details (hostnames, container names, Redis/queue mechanics) that are kept off the public repo. To get read access, ask Chris Henry or Jose Faria.
+For deployment procedures, on-call runbook, restart steps, Celery worker operations, and incident response, see the operations repo: [`ModelSEED/modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops). It is private and contains infrastructure details that are intentionally kept off this public repo. Access is invite-only: ask Chris Henry or Jose Faria.
 
 ### 4. Get a PATRIC token
 
@@ -490,10 +481,10 @@ Two modes controlled by the `MODELSEED_USE_CELERY` setting (default: `false`):
 
 | Setting | Value |
 |---------|-------|
-| Broker | `redis://bioseed_redis:6379/10` |
+| Broker | configured via `MODELSEED_CELERY_BROKER_URL` (Redis) |
 | Queue | `modelseed` |
 | Time limit | 4 hours |
-| Monitoring | `http://poplar.cels.anl.gov:5555/` (Flower) |
+| Monitoring | Flower (production endpoint documented in the ops repo) |
 
 To enable Celery mode, set `MODELSEED_USE_CELERY=true` in `.env`. The Redis broker must be reachable. Start the worker:
 
@@ -638,8 +629,8 @@ The build context is the **parent directory** containing all sibling repos (not 
 - CI/CD pipeline
 - Integration tests against dev workspace
 - Structured logging
-- ~~Celery task parity with job scripts~~ (done — `tasks.py` mirrors all job scripts, `celery_app.py` configured for `redis://bioseed_redis:6379/10`)
-- Deploy Celery worker for modelseed queue (tasks are ready but poplar currently runs in subprocess mode; needs `MODELSEED_USE_CELERY=true` + a worker process)
+- ~~Celery task parity with job scripts~~ (done: `tasks.py` mirrors all job scripts, `celery_app.py` configured for the deployment's Redis broker)
+- ~~Deploy Celery worker for modelseed queue~~ (done: production runs with `MODELSEED_USE_CELERY=true` and a dedicated worker process)
 - Health check enhancements
 - Job store file locking for concurrent access
 

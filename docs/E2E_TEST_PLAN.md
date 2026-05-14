@@ -1,6 +1,6 @@
 # ModelSEED — Comprehensive E2E test plan
 
-A repeatable, layered live test suite that runs against the deployed stack (https://modelseed.org and the API at `poplar.cels.anl.gov:3004` / `modelseed.org/PMS/`). Verifies both **functional correctness** (every endpoint, page, dropdown works) and **biological soundness** (built models grow, gapfill solutions are minimal, FBA fluxes are physically reasonable).
+A repeatable, layered live test suite that runs against the deployed stack (https://modelseed.org for the UI, https://modelseed.org/PMS/ for the API). Verifies both **functional correctness** (every endpoint, page, dropdown works) and **biological soundness** (built models grow, gapfill solutions are minimal, FBA fluxes are physically reasonable).
 
 `/plant` is excluded from the suite because that section of the live site isn't functional yet.
 

@@ -37,6 +37,6 @@ When a gap gets resolved, move it to a "Resolved" section at the bottom and link
 **Outstanding follow-ups (non-blocking):**
 
 - MSSS still returns `DNAsequence: [None]` even with `getDNASequence=1`. Likely another DB grant FIGV needs for contig storage. Doesn't block reconstruction (we use protein sequences and feature metadata, not contig DNA, for ModelSEED templates). Worth a separate Slack to Sam/Bob.
-- Native FIGV port (reading `/vol/rast-prod/jobs/` directly in Python) would let us retire MSSS entirely once branch is decommissioned. Currently blocked on poplar not being able to reach the RAST filesystem; not urgent.
+- Native FIGV port (reading `/vol/rast-prod/jobs/` directly in Python) would let us retire MSSS entirely once branch is decommissioned. Currently blocked on the API host not being able to reach the RAST filesystem; not urgent.
 
 **History:** Full investigation trail in the holding doc at `.claude/plans/parallel-napping-rabbit.md` (Parts 1 and 3) and the project memory `project_msss_disposition.md`.

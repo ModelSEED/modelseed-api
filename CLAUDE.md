@@ -46,7 +46,7 @@ Both backends return identical 12-element metadata tuples. All service code work
 ## Job dispatch
 
 - `MODELSEED_USE_CELERY=false` (default) — spawns subprocess scripts from `src/job_scripts/`
-- `MODELSEED_USE_CELERY=true` — sends tasks to Redis via Celery (production on poplar)
+- `MODELSEED_USE_CELERY=true`: sends tasks to Redis via Celery (production deployment)
 
 Job scripts and Celery tasks must be kept in sync — they implement the same logic.
 
