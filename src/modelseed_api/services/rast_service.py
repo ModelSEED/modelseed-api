@@ -41,7 +41,23 @@ logger = logging.getLogger("modelseed_api.rast")
 
 
 class RastService:
-    """Read-only proxy to MSSeedSupportServer."""
+    """RAST integration: filesystem reader for genome data, MSSS proxy for listings.
+
+    Two methods, two backends:
+
+    - `get_genome(...)` reads directly from `<MODELSEED_RAST_JOBS_DIR>/<job_id>/`
+      via `RastFigvReader`. No network, no MSSS dependency.
+
+    - `list_jobs(...)` still wraps `MSSeedSupportServer.list_rast_jobs` over
+      JSON-RPC. The filesystem alternative would require building a
+      ~1.6M-entry `job_id -> user` index (live walks across 13 NFS shards
+      time out past 10 minutes per Dan's "don't list the main directory"
+      warning). Since list_rast_jobs is fast and lightweight on MSSS's side
+      and not on any hot path, the simpler design is to leave it MSSS-wrapped
+      until MSSS is actually decommissioned. If/when MSSS dies, replace
+      `list_jobs` with a background-built index (see plan file Part 4
+      "Out of scope for today's slice").
+    """
 
     def list_jobs(
         self,

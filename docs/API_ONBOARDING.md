@@ -1079,10 +1079,10 @@ Each object is `[path, type, metadata_dict, data_string]`.
 
 ### RAST
 
-RAST (Rapid Annotation using Subsystem Technology) integration. Two endpoints:
+RAST (Rapid Annotation using Subsystem Technology) integration. Two endpoints, two backends:
 
-1. **`GET /api/rast/jobs`** lists a user's RAST annotation jobs (queries `RastProdJobCache` MySQL).
-2. **`GET /api/rast/genome`** fetches an annotated genome from a specific RAST job (wraps MSSeedSupportServer's `getRastGenomeData` over JSON-RPC and translates the result into a KBase Genome dict).
+1. **`GET /api/rast/jobs`** lists a user's RAST annotation jobs (still wraps MSSeedSupportServer `list_rast_jobs` over JSON-RPC; thin and fast).
+2. **`GET /api/rast/genome`** fetches an annotated genome from a specific RAST job by reading the FIGV-format files at `<MODELSEED_RAST_JOBS_DIR>/<job_id>/rp/<genome_id>/` directly. No MSSS dependency; reads NFS-mounted-read-only data. Translator output is byte-equivalent to the previous MSSS-wrap (verified by differential test).
 
 Together they support the "Build Model from RAST job" workflow:
 
@@ -1092,14 +1092,16 @@ Together they support the "Build Model from RAST job" workflow:
                                               { genome: "<display name>",
                                                 rast_job_id: "<job_id>",
                                                 rast_genome_id: "<genome_id>" }
-   (which internally does:                   GET /api/rast/genome → translate → reconstruct)
+   (which internally does:                   GET /api/rast/genome -> translate -> reconstruct)
 ```
+
+Both endpoints are config-gated. Production sets `MODELSEED_MSSS_URL` and `MODELSEED_RAST_JOBS_DIR` via .env; deployments without these (e.g. local/standalone use of this codebase) get a clean 503 from the respective endpoint.
 
 #### `GET /api/rast/jobs`: list user's RAST annotation jobs
 
-Queries the `RastProdJobCache` MySQL database for the authenticated user's annotation jobs.
+Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC. The MSSS service authenticates the user via the token's `un=` field and returns their owned jobs.
 
-**Auth:** PATRIC or RAST token (the `un=` field is matched against the RAST job owner).
+**Auth:** RAST token (PATRIC tokens get "Username not found" from MSSS; the endpoint surfaces that as 401).
 
 **Query Parameters:** none.
 
@@ -1123,24 +1125,24 @@ Queries the `RastProdJobCache` MySQL database for the authenticated user's annot
 
 | Code | Meaning |
 |------|---------|
-| 503 | RAST database not configured (no `MODELSEED_RAST_DB_HOST` set) |
-| 503 | `pymysql` not installed in the container |
-| 502 | RAST database query failed (network, auth, or schema error) |
+| 401 | PATRIC token used (MSSS returns "Username not found") |
+| 502 | MSSS returned an error |
+| 503 | `MODELSEED_MSSS_URL` not configured (deployment doesn't have RAST integration) |
 
-This endpoint is optional; if your deployment doesn't have the RAST DB credentials set, clients get HTTP 503.
+This endpoint is optional; if your deployment doesn't have MSSS configured, clients get HTTP 503.
 
 #### `GET /api/rast/genome`: fetch an annotated RAST genome
 
-Fetches the actual annotated genome data for a RAST job and returns it as a KBase Genome dict ready to feed into model reconstruction. Wraps MSSS `MSSeedSupportServer.getRastGenomeData` over JSON-RPC and runs the response through a pure-function translator that mirrors the shape `BVBRCUtils.build_kbase_genome_from_api()` produces.
+Fetches the actual annotated genome data for a RAST job and returns it as a KBase Genome dict ready to feed into model reconstruction. Reads the FIGV-format files at `<MODELSEED_RAST_JOBS_DIR>/<job_id>/rp/<genome_id>/` directly (NFS-mounted read-only) and runs the result through a pure-function translator that produces the same shape `BVBRCUtils.build_kbase_genome_from_api()` produces.
 
-**Auth:** RAST token only. PATRIC tokens are rejected by MSSS upstream and the endpoint returns 401 with a clear message.
+**Auth:** Any valid RAST or PATRIC token. The token is used by the auth dependency for caller identification; file access is gated by the OS-level NFS mount permissions (read-only at the kernel and bind levels).
 
 **Query Parameters:**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `genome_id` | string | yes | The RAST genome ID (e.g. `"85962.43"`) |
-| `job_id` | string | no | The RAST job ID for traceability. If omitted, derived from MSSS's `source` field |
+| `job_id` | string | yes | The RAST job ID (the filesystem reader needs this to find the job directory) |
 
 **Response:** A KBase Genome dict (~25 top-level fields). Same shape as the genome dict the BV-BRC path produces, so downstream reconstruction code is unchanged. Top-level fields include `id`, `scientific_name`, `domain`, `taxonomy`, `genetic_code`, `dna_size`, `num_contigs`, `contig_ids`, `contig_lengths`, `gc_content`, `md5`, `molecule_type`, `source`, `source_id`, `features` (list), `non_coding_features` (list), `cdss` (list), `feature_counts` (dict), `genome_tiers`, `warnings`.
 
@@ -1148,10 +1150,11 @@ Fetches the actual annotated genome data for a RAST job and returns it as a KBas
 
 | Code | Meaning |
 |---|---|
-| 401 | Missing token, or PATRIC token used (MSSS returns "Username not found") |
-| 422 | Missing required `genome_id` query param |
-| 502 | MSSS returned an error (e.g. genome not found in any RAST job) |
-| 503 | `MODELSEED_MSSS_URL` not configured |
+| 400 | Missing required `job_id` query param |
+| 401 | Missing/invalid token |
+| 404 | `job_id` or `genome_id` not found on disk |
+| 502 | Translator error (malformed input data) |
+| 503 | `MODELSEED_RAST_JOBS_DIR` not configured for this deployment |
 
 #### `POST /api/jobs/reconstruct` with `rast_job_id` (third input mode)
 

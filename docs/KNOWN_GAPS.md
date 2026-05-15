@@ -36,7 +36,8 @@ When a gap gets resolved, move it to a "Resolved" section at the bottom and link
 
 **Outstanding follow-ups (non-blocking):**
 
-- MSSS still returns `DNAsequence: [None]` even with `getDNASequence=1`. Likely another DB grant FIGV needs for contig storage. Doesn't block reconstruction (we use protein sequences and feature metadata, not contig DNA, for ModelSEED templates). Worth a separate Slack to Sam/Bob.
-- Native FIGV port (reading `/vol/rast-prod/jobs/` directly in Python) would let us retire MSSS entirely once branch is decommissioned. Currently blocked on the API host not being able to reach the RAST filesystem; not urgent.
+- ~~Native FIGV port (reading `/vol/rast-prod/jobs/` directly in Python) would let us retire MSSS entirely once branch is decommissioned.~~ **DONE 2026-05-15:** `RastFigvReader` reads `/vol/rast-prod/jobs/<job_id>/rp/<genome_id>/` directly. `/api/rast/genome` no longer touches MSSS. Differential test confirmed byte-equivalent output. The mount is read-only at five enforcement layers (NetApp export, host kernel, Docker `:ro`, application code with no write syscalls, NFS root_squash); empirically verified in a transient validation container.
+- ~~MSSS still returns `DNAsequence: [None]` even with `getDNASequence=1`.~~ **Resolved as a side-effect of the FIGV port:** the reader parses the `contigs` FASTA on disk directly, so `DNAsequence` now contains real contig sequences.
+- `/api/rast/jobs` still wraps MSSS `list_rast_jobs`. The filesystem alternative would require a background-built `job_id -> user` index (live walks across 13 NFS shards exceed 10 minutes; per Dan's "don't list the main directory" warning). Not blocking anything: list_rast_jobs is fast on MSSS's side and not on a hot path. Replace with an indexed reader if/when MSSS is actually decommissioned.
 
-**History:** Full investigation trail in the holding doc at `.claude/plans/parallel-napping-rabbit.md` (Parts 1 and 3) and the project memory `project_msss_disposition.md`.
+**History:** Full investigation trail in `.claude/plans/parallel-napping-rabbit.md` (Parts 1, 3, and 4) and project memories `project_msss_disposition.md` and `project_msss_retirement.md`.
