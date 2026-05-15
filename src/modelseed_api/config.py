@@ -57,7 +57,17 @@ class Settings(BaseSettings):
 
     # MSSeedSupportServer JSON-RPC URL (used by /api/rast/genome to fetch
     # annotated genomes from RAST jobs). Leave empty to disable that endpoint.
+    # DEPRECATED once rast_jobs_dir is configured: the filesystem reader
+    # supersedes the MSSS proxy. Kept temporarily as a fallback during the
+    # bake period; will be removed in a follow-up PR.
     modelseed_msss_url: str = "https://modelseed.org/services/ms_fba"
+
+    # RAST jobs filesystem directory (used by /api/rast/genome to fetch
+    # annotated genomes directly from disk via the FIGV-on-disk format).
+    # Leave empty (default) for local/standalone deployments without RAST
+    # data on disk; the route handlers return 503 in that case. Production
+    # poplar deployment sets this to "/vol/rast-prod/jobs" via .env.
+    rast_jobs_dir: str = ""
 
     # Timeouts
     workspace_timeout: int = 1800  # 30 minutes (matching existing client)

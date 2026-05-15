@@ -8,10 +8,16 @@ services:
       - "3004:8000"
     volumes:
       - modelseed-jobs:/tmp/modelseed-jobs
+      # Read-only NFS bind for RAST job filesystem. Mounting /vol (not the
+      # /vol/rast-prod/jobs symlink) so the container can resolve through
+      # the symlink to the actual /vol/rast-prod-jobs-* shards. Read-only
+      # at three layers: NFS server export, host kernel mount, and :ro flag.
+      - /vol:/vol:ro
     environment:
       MODELSEED_USE_CELERY: "true"
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
+      MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
     restart: unless-stopped
     networks:
       - default
@@ -31,10 +37,14 @@ services:
     command: ["python", "-m", "modelseed_api.jobs.celery_app"]
     volumes:
       - modelseed-jobs:/tmp/modelseed-jobs
+      # Same RAST NFS bind as the api service (worker calls RastService too,
+      # for the reconstruct task that uses rast_job_id).
+      - /vol:/vol:ro
     environment:
       MODELSEED_USE_CELERY: "true"
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
+      MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
     restart: unless-stopped
     # Give a long-running task (reconstruct + gapfill ~6-10 min, FBA ~10 s)
     # time to finish on SIGTERM before docker SIGKILLs.  Without this,
