@@ -110,38 +110,37 @@ class RastService:
         *,
         timeout: float = 180.0,
     ) -> dict[str, Any]:
-        """Fetch a RAST-annotated genome via MSSS and translate it.
+        """Fetch a RAST-annotated genome from disk and translate it.
+
+        Reads the FIGV-format files at
+        `<MODELSEED_RAST_JOBS_DIR>/<job_id>/rp/<genome_id>/` directly;
+        no MSSS dependency. The route handler is expected to have already
+        verified that `settings.rast_jobs_dir` is set and exists, but we
+        guard here too for direct service-layer callers.
 
         Returns a KBase Genome dict ready for
         `MSReconstructionUtils.get_msgenome_from_dict()`.
 
         Raises:
-            RuntimeError: if MSSS is unreachable or returns an error.
-            ValueError:   if the genome ID is not found.
+            FileNotFoundError: if the job directory or genome subdirectory
+                does not exist on disk.
+            ValueError: if `job_id` is None (filesystem reader requires it).
         """
-        if not settings.modelseed_msss_url:
+        if not settings.rast_jobs_dir:
             raise RuntimeError(
-                "MSSS URL not configured (set MODELSEED_MSSS_URL); "
-                "cannot fetch RAST genome data."
+                "RAST jobs directory not configured (set MODELSEED_RAST_JOBS_DIR); "
+                "this deployment is not set up for RAST genome retrieval."
+            )
+        if job_id is None:
+            raise ValueError(
+                "job_id is required when reading from filesystem; "
+                "the legacy MSSS path could derive it from the source field, "
+                "but the filesystem reader needs it explicitly."
             )
 
-        rast_genome = _call_msss_jsonrpc(
-            url=settings.modelseed_msss_url,
-            method="MSSeedSupportServer.getRastGenomeData",
-            params=[{
-                "genome": genome_id,
-                "getSequences": 1,
-                "getDNASequence": 1,
-            }],
-            token=rast_token,
-            timeout=timeout,
-        )
-
-        if job_id is None:
-            source = rast_genome.get("source", "")
-            m = re.match(r"RAST:(\S+)", source) if source else None
-            job_id = m.group(1) if m else None
-
+        from modelseed_api.services.rast_figv_reader import RastFigvReader
+        reader = RastFigvReader(settings.rast_jobs_dir)
+        rast_genome = reader.read_rast_genome(job_id, genome_id)
         return translate_rast_to_kbase_genome(rast_genome, job_id=job_id)
 
 

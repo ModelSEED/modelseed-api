@@ -1,6 +1,19 @@
-"""RAST legacy endpoints: list annotation jobs and fetch annotated genomes."""
+"""RAST legacy endpoints: list annotation jobs and fetch annotated genomes.
+
+Two endpoints:
+- `GET /jobs`: lists the user's RAST annotation jobs (still wraps MSSS;
+  filesystem-based replacement deferred to a follow-up PR).
+- `GET /genome`: fetches a RAST-annotated genome directly from the
+  FIGV-format filesystem at `MODELSEED_RAST_JOBS_DIR`.
+
+Both endpoints are config-gated: production deployments set
+`MODELSEED_RAST_JOBS_DIR` (and `MODELSEED_MSSS_URL`); local/standalone
+users leave them empty and get a clean 503 explaining the endpoint isn't
+configured for this deployment.
+"""
 
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -73,25 +86,36 @@ async def get_rast_genome(
 ) -> Any:
     """Fetch a RAST-annotated genome and return it as a KBase Genome dict.
 
-    Calls MSSeedSupportServer's `getRastGenomeData` over JSON-RPC, then
-    translates the response into the KBase Genome shape that our
-    reconstruction pipeline expects (mirrors what BV-BRC genome lookup
-    produces; see `BVBRCUtils.build_kbase_genome_from_api()`).
+    Reads the RAST job's annotation files directly from the
+    FIGV-format filesystem at `MODELSEED_RAST_JOBS_DIR`, then translates
+    the result into the KBase Genome shape that our reconstruction
+    pipeline expects (mirrors what BV-BRC genome lookup produces; see
+    `BVBRCUtils.build_kbase_genome_from_api()`).
 
-    Auth: only RAST tokens are accepted by MSSS. PATRIC tokens fail
-    upstream with "Username not found"; this endpoint forwards that
-    failure as a 502.
+    Auth: any valid RAST or PATRIC token works (we no longer call MSSS
+    so the "RAST tokens only" restriction is gone). The token is still
+    used by the auth dependency for identification, even though file
+    access is gated by the operating-system-level NFS mount permissions
+    (read-only at the kernel + bind level).
 
     Status codes:
       200: KBase Genome dict
       401: missing/invalid token (handled by auth dependency)
-      502: MSSS reachable but returned an error
-      503: MODELSEED_MSSS_URL not configured
+      404: job_id or genome_id not found on disk
+      503: MODELSEED_RAST_JOBS_DIR not configured for this deployment
     """
-    if not settings.modelseed_msss_url:
+    if job_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="job_id query parameter is required (filesystem reader needs it)",
+        )
+    if not settings.rast_jobs_dir or not os.path.isdir(settings.rast_jobs_dir):
         raise HTTPException(
             status_code=503,
-            detail="MSSS URL not configured (set MODELSEED_MSSS_URL)",
+            detail=(
+                "RAST integration not configured for this deployment "
+                "(MODELSEED_RAST_JOBS_DIR is unset or path does not exist)"
+            ),
         )
 
     from modelseed_api.services.rast_service import RastService
@@ -103,19 +127,7 @@ async def get_rast_genome(
             genome_id=genome_id,
             job_id=job_id,
         )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
-        # Translator-level errors (malformed RAST response, missing genome id)
         raise HTTPException(status_code=502, detail=f"RAST translator error: {e}")
-    except RuntimeError as e:
-        msg = str(e)
-        # "Username not found" is MSSS rejecting a non-RAST token
-        if "Username not found" in msg:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "MSSS rejected token (use a RAST token, not a PATRIC token, "
-                    "for /api/rast/genome)"
-                ),
-            )
-        logger.error("MSSS getRastGenomeData failed: %s", msg)
-        raise HTTPException(status_code=502, detail=f"MSSS error: {msg[:300]}")
