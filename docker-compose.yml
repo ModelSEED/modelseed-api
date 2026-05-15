@@ -13,11 +13,17 @@ services:
       # the symlink to the actual /vol/rast-prod-jobs-* shards. Read-only
       # at three layers: NFS server export, host kernel mount, and :ro flag.
       - /vol:/vol:ro
+      # Pre-built RAST job index (job_id -> user metadata) so /api/rast/jobs
+      # serves immediately at container startup instead of waiting on a
+      # ~30-min walk of 1.6M dirs. Host-managed (built by a one-time script
+      # or cron); container only reads.
+      - /scratch/modelseed/rast_index:/var/cache/modelseed:ro
     environment:
       MODELSEED_USE_CELERY: "true"
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
       MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
+      MODELSEED_RAST_INDEX_PATH: "/var/cache/modelseed/rast_user_index.json"
     restart: unless-stopped
     networks:
       - default
@@ -40,11 +46,15 @@ services:
       # Same RAST NFS bind as the api service (worker calls RastService too,
       # for the reconstruct task that uses rast_job_id).
       - /vol:/vol:ro
+      # Same pre-built RAST index as the api service (worker doesn't list
+      # jobs but mounting symmetrically keeps container parity simple).
+      - /scratch/modelseed/rast_index:/var/cache/modelseed:ro
     environment:
       MODELSEED_USE_CELERY: "true"
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
       MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
+      MODELSEED_RAST_INDEX_PATH: "/var/cache/modelseed/rast_user_index.json"
     restart: unless-stopped
     # Give a long-running task (reconstruct + gapfill ~6-10 min, FBA ~10 s)
     # time to finish on SIGTERM before docker SIGKILLs.  Without this,
