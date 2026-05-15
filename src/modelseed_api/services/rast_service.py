@@ -67,40 +67,63 @@ class RastService:
     ) -> list[dict[str, Any]]:
         """Return all RAST annotation jobs the token's user owns.
 
-        Reads from the persistent FIGV-on-disk index at
-        `MODELSEED_RAST_INDEX_PATH` (built once at container startup by
-        `build_user_index()`). Sub-millisecond regardless of total job count.
+        Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC. MSSS
+        uses the `Authorization` header to identify the user; we normalize
+        the row shapes (MSSS returns stringy ints) into a stable list of
+        job dicts for our consumers.
 
-        Extracts `username` from the token's `un=...` field to filter the index.
+        We continue wrapping MSSS for listings (instead of using the
+        filesystem-index alternative committed on the shelf) because:
+        - It works today and is a thin, fast HTTPS round-trip.
+        - The filesystem-index alternative needs a 60+ minute cold build.
+        - When MSSS is eventually decommissioned, either Dan opens a
+          conduit to the chestnut MySQL DB (preferred, ~10 lines of code)
+          or we fall back to the on-the-shelf filesystem index (see
+          `RastFigvReader.list_jobs_for_user` and the build/delta scripts
+          under `scripts/`).
 
         Raises:
-            RuntimeError: if the index doesn't exist yet or RAST jobs dir is unset.
+            RuntimeError: if MSSS is unreachable or returns an error.
         """
-        if not settings.rast_jobs_dir:
+        if not settings.modelseed_msss_url:
             raise RuntimeError(
-                "RAST jobs directory not configured (set MODELSEED_RAST_JOBS_DIR); "
-                "this deployment is not set up for RAST job listing."
+                "MSSS URL not configured (set MODELSEED_MSSS_URL); "
+                "cannot list RAST jobs."
             )
 
-        # Extract username from token's `un=` segment. RAST tokens look like
-        # `un=jplfaria|tokenid=...`; PATRIC tokens like `un=jplfaria@patricbrc.org|...`.
-        # We strip the `@patricbrc.org` suffix because RAST job dirs use the
-        # bare username (e.g. USER file says "seaver" or "jplfaria").
-        username = ""
-        for seg in rast_token.split("|"):
-            if seg.startswith("un="):
-                username = seg[3:].strip().split("@")[0]
-                break
-        if not username:
-            raise RuntimeError(
-                "Could not extract `un=` username from token; "
-                "RAST job listing requires a properly formatted RAST or PATRIC token."
-            )
+        result = _call_msss_jsonrpc(
+            url=settings.modelseed_msss_url,
+            method="MSSeedSupportServer.list_rast_jobs",
+            params=[{}],
+            token=rast_token,
+            timeout=timeout,
+        )
 
-        from modelseed_api.services.rast_figv_reader import RastFigvReader
-        reader = RastFigvReader(settings.rast_jobs_dir)
-        index_path = settings.rast_index_path or None
-        return reader.list_jobs_for_user(username, index_path=index_path)
+        if not isinstance(result, list):
+            return []
+
+        def _to_int(v: Any) -> int:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return 0
+
+        return [
+            {
+                "owner": str(row.get("owner") or ""),
+                "project": str(row.get("project") or row.get("project_name") or ""),
+                "id": str(row.get("id") or ""),
+                "creation_time": str(row.get("creation_time") or row.get("created_on") or ""),
+                "mod_time": str(row.get("mod_time") or row.get("last_modified") or ""),
+                "genome_size": _to_int(row.get("genome_size") or row.get("genome_bp_count")),
+                "contig_count": _to_int(row.get("contig_count") or row.get("genome_contig_count")),
+                "genome_id": str(row.get("genome_id") or ""),
+                "genome_name": str(row.get("genome_name") or ""),
+                "type": str(row.get("type") or ""),
+            }
+            for row in result
+            if isinstance(row, dict)
+        ]
 
     def get_genome(
         self,

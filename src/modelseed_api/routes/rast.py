@@ -31,23 +31,22 @@ async def list_rast_jobs(
 ) -> Any:
     """List the authenticated user's RAST annotation jobs.
 
-    Reads from the persistent FIGV-on-disk index at
-    `MODELSEED_RAST_INDEX_PATH` (built once at container startup).
-    Username is extracted from the token's `un=` field.
+    Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC.
+
+    Auth: only RAST tokens are accepted by MSSS upstream. PATRIC tokens
+    are rejected with "Username not found"; this endpoint catches that
+    and returns 401 with a clear message.
 
     Status codes:
       200: list of job dicts
-      401: missing/invalid token (handled by auth dependency)
-      503: RAST integration not configured for this deployment, OR the
-           job index is still being built (try again in a few minutes)
+      401: missing/invalid token, or PATRIC token used (RAST-only)
+      502: MSSS reachable but returned an error
+      503: MODELSEED_MSSS_URL not configured
     """
-    if not settings.rast_jobs_dir:
+    if not settings.modelseed_msss_url:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "RAST integration not configured for this deployment "
-                "(MODELSEED_RAST_JOBS_DIR is unset)"
-            ),
+            detail="MSSS URL not configured (set MODELSEED_MSSS_URL)",
         )
 
     from modelseed_api.services.rast_service import RastService
@@ -55,15 +54,18 @@ async def list_rast_jobs(
     svc = RastService()
     try:
         return svc.list_jobs(rast_token=user.token)
-    except FileNotFoundError as e:
-        # Index file doesn't exist yet (still building at startup, or
-        # never built). Surface as 503 so clients know to retry.
-        raise HTTPException(
-            status_code=503,
-            detail=f"RAST job index not ready yet, please retry shortly: {e}",
-        )
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        msg = str(e)
+        if "Username not found" in msg:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "MSSS rejected token (use a RAST token, not a PATRIC token, "
+                    "for /api/rast/jobs)"
+                ),
+            )
+        logger.error("MSSS list_rast_jobs failed: %s", msg)
+        raise HTTPException(status_code=502, detail=f"MSSS error: {msg[:300]}")
 
 
 @router.get("/genome")
