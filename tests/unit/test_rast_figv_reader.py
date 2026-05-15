@@ -404,6 +404,106 @@ class TestUserIndex:
             mod._DEFAULT_SHARDS = original_shards
 
 
+class TestDeltaUpdate:
+    """Tests for update_user_index_delta (incremental refresh)."""
+
+    def _build_seed_index(self, base):
+        """Build a fixture with two jobs (IDs 100, 200), then return a
+        ready-to-use reader + index_file path with the index already built."""
+        jobs_dir = base / "rast-prod-jobs-3" / "jobs"
+        for job_id, user in (("100", "alice"), ("200", "bob")):
+            jp = jobs_dir / job_id
+            jp.mkdir(parents=True)
+            (jp / "USER").write_text(user)
+            (jp / "GENOME_ID").write_text(f"{job_id}.1")
+            (jp / "GENOME").write_text(f"Test genome {job_id}")
+            (jp / "PROJECT").write_text(f"{user}_proj_{job_id}")
+
+        from modelseed_api.services import rast_figv_reader as mod
+        original_shards = mod._DEFAULT_SHARDS
+        mod._DEFAULT_SHARDS = ("rast-prod-jobs-3",)
+
+        reader = RastFigvReader(jobs_dir)
+        index_file = base / "index.json"
+        reader.build_user_index(index_path=index_file)
+        return reader, index_file, jobs_dir, mod, original_shards
+
+    def test_delta_picks_up_new_sequential_job(self, tmp_path):
+        reader, index_file, jobs_dir, mod, original = self._build_seed_index(tmp_path)
+        try:
+            # Add a new job 201 (one above the highest known, 200)
+            new_jp = jobs_dir / "201"
+            new_jp.mkdir(parents=True)
+            (new_jp / "USER").write_text("carol")
+            (new_jp / "GENOME_ID").write_text("201.1")
+            (new_jp / "GENOME").write_text("New genome 201")
+            (new_jp / "PROJECT").write_text("carol_proj_201")
+
+            summary = reader.update_user_index_delta(index_path=index_file)
+            assert summary["new_jobs_added"] == 1
+            assert summary["highest_known_before"] == 200
+
+            # Carol should now be findable
+            carol_jobs = reader.list_jobs_for_user("carol", index_path=index_file)
+            assert len(carol_jobs) == 1
+            assert carol_jobs[0]["id"] == "201"
+        finally:
+            mod._DEFAULT_SHARDS = original
+
+    def test_delta_stops_after_consecutive_missing(self, tmp_path):
+        reader, index_file, jobs_dir, mod, original = self._build_seed_index(tmp_path)
+        try:
+            # Don't add anything new. Delta should detect no new jobs and
+            # stop quickly without scanning all the way to max_new_to_scan.
+            summary = reader.update_user_index_delta(
+                index_path=index_file,
+                max_consecutive_missing=10,
+            )
+            assert summary["new_jobs_added"] == 0
+            assert summary["scanned"] == 10  # Stops after exactly max_consecutive_missing
+        finally:
+            mod._DEFAULT_SHARDS = original
+
+    def test_delta_finds_jobs_with_gaps_within_threshold(self, tmp_path):
+        reader, index_file, jobs_dir, mod, original = self._build_seed_index(tmp_path)
+        try:
+            # Add 205 and 210, leaving gaps at 201-204, 206-209.
+            for jid, user in (("205", "carol"), ("210", "dave")):
+                jp = jobs_dir / jid
+                jp.mkdir(parents=True)
+                (jp / "USER").write_text(user)
+
+            summary = reader.update_user_index_delta(
+                index_path=index_file,
+                max_consecutive_missing=10,  # gap of 4 + gap of 4 should both fit
+            )
+            assert summary["new_jobs_added"] == 2
+        finally:
+            mod._DEFAULT_SHARDS = original
+
+    def test_delta_stops_at_large_gap(self, tmp_path):
+        reader, index_file, jobs_dir, mod, original = self._build_seed_index(tmp_path)
+        try:
+            # Job at 250 with a 49-dir gap from 200 should not be found
+            # if max_consecutive_missing=20.
+            far_jp = jobs_dir / "250"
+            far_jp.mkdir(parents=True)
+            (far_jp / "USER").write_text("carol")
+
+            summary = reader.update_user_index_delta(
+                index_path=index_file,
+                max_consecutive_missing=20,
+            )
+            assert summary["new_jobs_added"] == 0
+        finally:
+            mod._DEFAULT_SHARDS = original
+
+    def test_delta_raises_when_index_missing(self, tmp_path):
+        reader = RastFigvReader(tmp_path)
+        with pytest.raises(FileNotFoundError):
+            reader.update_user_index_delta(index_path=tmp_path / "no_index.json")
+
+
 class TestLocationParser:
     def test_forward_strand(self):
         assert _parse_location_endpoints("NC_000913.3_337_2799") == (337, 2799)

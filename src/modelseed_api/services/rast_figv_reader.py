@@ -220,6 +220,111 @@ class RastFigvReader:
         logger.info("rast_index: build complete: %s", summary)
         return summary
 
+    def update_user_index_delta(
+        self,
+        *,
+        index_path: str | Path | None = None,
+        max_consecutive_missing: int = 50,
+        max_new_to_scan: int = 5000,
+    ) -> dict[str, Any]:
+        """Incremental update: pick up new jobs since the last full build.
+
+        Cheap to run frequently (every 5 minutes via cron). Strategy:
+        scan job IDs sequentially upward from the highest known ID,
+        stopping after `max_consecutive_missing` non-existent IDs in a row.
+        For each existing dir, read its USER + small metadata and add to
+        the index in place.
+
+        RAST job IDs are sequential, so this catches new jobs without
+        rescanning the entire 1.6M-dir filesystem (which takes 1-2h cold).
+
+        Returns a summary dict. The index file is rewritten atomically
+        even when no new jobs are found (mtime updates so future
+        deltas know we're current).
+
+        Args:
+            index_path: where the index lives. Defaults to the module default.
+            max_consecutive_missing: stop scanning after this many in-a-row
+                missing job IDs. Tradeoff between catching gaps vs runtime.
+            max_new_to_scan: hard cap on dirs probed per call. Safety
+                bound in case something goes wrong with the gap detection.
+
+        Returns:
+            {
+              "highest_known_before": int,
+              "highest_known_after": int,
+              "new_jobs_added": int,
+              "elapsed_seconds": float,
+            }
+        """
+        out_path = Path(index_path) if index_path else _DEFAULT_INDEX_PATH
+        if not out_path.is_file():
+            raise FileNotFoundError(
+                f"Cannot delta-update missing index at {out_path}; "
+                f"run build_user_index() first."
+            )
+
+        t0 = time.time()
+        with out_path.open("r") as f:
+            index: dict[str, dict[str, Any]] = json.load(f)
+
+        highest_known = 0
+        for job_id_str in index.keys():
+            try:
+                jid = int(job_id_str)
+            except ValueError:
+                continue
+            if jid > highest_known:
+                highest_known = jid
+
+        # Walk upward from highest_known + 1. For each candidate, try
+        # _resolve_job_path (which checks all shards). Stop after a run
+        # of `max_consecutive_missing` non-existent IDs.
+        added = 0
+        consecutive_missing = 0
+        next_id = highest_known + 1
+        scanned = 0
+        while consecutive_missing < max_consecutive_missing and scanned < max_new_to_scan:
+            job_id_str = str(next_id)
+            try:
+                job_path = self._resolve_job_path(job_id_str)
+            except FileNotFoundError:
+                consecutive_missing += 1
+                next_id += 1
+                scanned += 1
+                continue
+            consecutive_missing = 0
+            user = self._read_text(job_path / "USER")
+            if user:
+                # Determine which shard the resolved path lives on (last
+                # parent before "/jobs/<id>"), which we want to record
+                # so a future full rebuild knows where this came from.
+                shard_name = job_path.parent.parent.name
+                index[job_id_str] = {
+                    "USER": user,
+                    "PROJECT": self._read_text(job_path / "PROJECT"),
+                    "GENOME": self._read_text(job_path / "GENOME"),
+                    "GENOME_ID": self._read_text(job_path / "GENOME_ID"),
+                    "shard": shard_name,
+                }
+                added += 1
+            next_id += 1
+            scanned += 1
+
+        # Atomic write
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        with tmp_path.open("w") as f:
+            json.dump(index, f, separators=(",", ":"))
+        tmp_path.replace(out_path)
+
+        return {
+            "highest_known_before": highest_known,
+            "highest_known_after": next_id - 1 - consecutive_missing,
+            "new_jobs_added": added,
+            "scanned": scanned,
+            "elapsed_seconds": time.time() - t0,
+        }
+
     # ---------------------------------------------------------------
     # Public API: per-job genome data
     # ---------------------------------------------------------------
