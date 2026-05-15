@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # poplar deployment sets this to "/vol/rast-prod/jobs" via .env.
     rast_jobs_dir: str = ""
 
+    # Persistent index file for /api/rast/jobs (job_id -> user metadata).
+    # Built at container startup; sub-millisecond reads thereafter. Leave
+    # empty to use the default in-container path /tmp/rast_user_index.json.
+    rast_index_path: str = ""
+
     # Timeouts
     workspace_timeout: int = 1800  # 30 minutes (matching existing client)
 

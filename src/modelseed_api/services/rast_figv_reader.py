@@ -28,11 +28,19 @@ File-format reference (per FIGV / SEED toolkit conventions):
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
+
+# Default location of the persistent user-to-job index used by
+# `list_jobs_for_user`. Overridable via `index_path` constructor arg.
+_DEFAULT_INDEX_PATH = Path("/tmp/rast_user_index.json")
 
 # RAST sharded its job dirs across these volumes on poplar. We try them in
 # order until we find the requested job. NFS metadata caches make subsequent
@@ -66,12 +74,154 @@ class RastFigvReader:
 
     def __init__(self, jobs_dir: str | Path) -> None:
         self.jobs_dir = Path(jobs_dir)
+        # The shards live as siblings two levels up: jobs_dir itself is
+        # `<vol_root>/rast-prod/jobs` (a symlink) but the actual shards
+        # are at `<vol_root>/rast-prod-jobs-<N>/jobs`. So sibling-shard
+        # lookup needs to start from `jobs_dir.parent.parent`. Resolve
+        # any symlinks first so this works regardless of how the path
+        # was passed in.
+        try:
+            self._vol_root = self.jobs_dir.resolve().parent.parent
+        except (OSError, RuntimeError):
+            # Fall back to lexical parent.parent when resolve fails (e.g. in
+            # tests with non-existent paths).
+            self._vol_root = self.jobs_dir.parent.parent
         # Cache job_id to absolute path for the lifetime of the reader to
         # avoid re-scanning shards on every call.
         self._path_cache: dict[str, Path] = {}
 
     # ---------------------------------------------------------------
-    # Public API
+    # Public API: per-user job listing
+    # ---------------------------------------------------------------
+
+    def list_jobs_for_user(
+        self,
+        username: str,
+        *,
+        index_path: str | Path | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return all RAST jobs owned by `username`, read from disk.
+
+        Backed by a JSON index at `index_path` (or default
+        `/tmp/rast_user_index.json`). The index maps job_id to a small
+        metadata dict and is built once via `build_user_index()`. Reading
+        from the index is sub-millisecond regardless of total job count;
+        building it is expensive (~minutes; walks all NFS shards).
+
+        If the index is missing, this raises `FileNotFoundError`. The
+        caller is expected to either pre-build the index at startup or
+        catch the error and degrade gracefully (e.g. return 503).
+        """
+        path = Path(index_path) if index_path else _DEFAULT_INDEX_PATH
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"RAST user index not found at {path}; run "
+                f"`build_user_index()` to create it."
+            )
+        with path.open("r") as f:
+            index = json.load(f)
+        out = []
+        for job_id, meta in index.items():
+            if meta.get("USER") != username:
+                continue
+            out.append(
+                {
+                    "owner": meta.get("USER", ""),
+                    "project": meta.get("PROJECT", ""),
+                    "id": job_id,
+                    "creation_time": meta.get("creation_time", ""),
+                    "mod_time": meta.get("mod_time", ""),
+                    "genome_size": int(meta.get("genome_size") or 0),
+                    "contig_count": int(meta.get("contig_count") or 0),
+                    "genome_id": meta.get("GENOME_ID", ""),
+                    "genome_name": meta.get("GENOME", ""),
+                    "type": "Genome",
+                }
+            )
+        return out
+
+    def build_user_index(
+        self,
+        *,
+        index_path: str | Path | None = None,
+        max_workers: int = 13,
+        progress_log_every: int = 50000,
+    ) -> dict[str, Any]:
+        """Walk every shard and build the `job_id to metadata` index.
+
+        Expensive (minutes). Intended to be called once at container
+        startup in a background thread, or via an out-of-band cron.
+        Writes the index to disk atomically (temp file + rename) so
+        readers never see a partial index.
+
+        Returns a small summary dict with timing + counts. The full
+        index is left on disk at `index_path`.
+        """
+        out_path = Path(index_path) if index_path else _DEFAULT_INDEX_PATH
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        t0 = time.time()
+        all_entries: dict[str, dict[str, Any]] = {}
+
+        def scan_shard(shard_name: str) -> tuple[str, dict[str, dict[str, Any]], int, float]:
+            s_start = time.time()
+            jobs_root = self._vol_root / shard_name / "jobs"
+            if not jobs_root.is_dir():
+                return shard_name, {}, 0, 0.0
+            shard_index: dict[str, dict[str, Any]] = {}
+            n = 0
+            with os.scandir(jobs_root) as it:
+                for entry in it:
+                    n += 1
+                    if not entry.is_dir():
+                        continue
+                    job_id = entry.name
+                    job_path = Path(entry.path)
+                    user = self._read_text(job_path / "USER")
+                    if not user:
+                        continue
+                    shard_index[job_id] = {
+                        "USER": user,
+                        "PROJECT": self._read_text(job_path / "PROJECT"),
+                        "GENOME": self._read_text(job_path / "GENOME"),
+                        "GENOME_ID": self._read_text(job_path / "GENOME_ID"),
+                        "shard": shard_name,
+                    }
+                    if len(shard_index) % progress_log_every == 0:
+                        logger.info(
+                            "rast_index: %s scanned %d entries (%d users so far) in %.1fs",
+                            shard_name, n, len(shard_index), time.time() - s_start,
+                        )
+            return shard_name, shard_index, n, time.time() - s_start
+
+        with ThreadPoolExecutor(max_workers=max_workers) as exe:
+            futures = {exe.submit(scan_shard, s): s for s in _DEFAULT_SHARDS}
+            for fut in as_completed(futures):
+                shard_name, shard_index, n_dirs, dt = fut.result()
+                all_entries.update(shard_index)
+                logger.info(
+                    "rast_index: shard %s done: %d dirs, %d indexed, %.1fs",
+                    shard_name, n_dirs, len(shard_index), dt,
+                )
+
+        # Write atomically: tmp file + rename so concurrent readers never
+        # see a partial index.
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        with tmp_path.open("w") as f:
+            json.dump(all_entries, f, separators=(",", ":"))
+        tmp_path.replace(out_path)
+
+        elapsed = time.time() - t0
+        summary = {
+            "indexed_jobs": len(all_entries),
+            "elapsed_seconds": elapsed,
+            "index_path": str(out_path),
+            "size_bytes": out_path.stat().st_size,
+        }
+        logger.info("rast_index: build complete: %s", summary)
+        return summary
+
+    # ---------------------------------------------------------------
+    # Public API: per-job genome data
     # ---------------------------------------------------------------
 
     def read_rast_genome(self, job_id: str, genome_id: str) -> dict[str, Any]:
@@ -174,12 +324,11 @@ class RastFigvReader:
             self._path_cache[job_id] = direct
             return direct
 
-        # Fall back to scanning sibling shards on the same /vol parent.
-        # This handles the case where jobs_dir is a specific shard but the
-        # requested job lives on a different shard.
-        vol_root = self.jobs_dir.parent
+        # Fall back to scanning sibling shards under the /vol root.
+        # This handles the case where jobs_dir is the symlinked path but
+        # the requested job lives on a different shard than the symlink target.
         for shard_name in _DEFAULT_SHARDS:
-            candidate = vol_root / shard_name / "jobs" / job_id
+            candidate = self._vol_root / shard_name / "jobs" / job_id
             if candidate.is_dir():
                 self._path_cache[job_id] = candidate
                 return candidate

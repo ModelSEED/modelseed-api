@@ -304,6 +304,106 @@ class TestReaderFeedsTranslator:
 # ---------------------------------------------------------------
 
 
+class TestUserIndex:
+    """Tests for build_user_index + list_jobs_for_user."""
+
+    def _build_two_user_tree(self, base):
+        """Build a fixture with 3 jobs from 2 users in 1 fake shard."""
+        # The reader expects shards to live as siblings of jobs_dir.parent
+        # so we mimic the /vol/rast-prod-jobs-N/jobs/ layout.
+        jobs_dir = base / "rast-prod-jobs-3" / "jobs"
+        for job_id, user, gid, gname, project in (
+            ("100", "alice", "1.1", "E. coli alice", "alice_proj1"),
+            ("200", "bob",   "2.1", "B. subtilis bob", "bob_proj1"),
+            ("300", "alice", "3.1", "M. genitalium alice", "alice_proj2"),
+        ):
+            jp = jobs_dir / job_id
+            jp.mkdir(parents=True)
+            (jp / "USER").write_text(user)
+            (jp / "GENOME_ID").write_text(gid)
+            (jp / "GENOME").write_text(gname)
+            (jp / "PROJECT").write_text(project)
+        return jobs_dir
+
+    def test_build_index_picks_up_all_jobs(self, tmp_path):
+        jobs_dir = self._build_two_user_tree(tmp_path)
+        # Patch _DEFAULT_SHARDS so the builder finds our fake shard
+        from modelseed_api.services import rast_figv_reader as mod
+        original_shards = mod._DEFAULT_SHARDS
+        mod._DEFAULT_SHARDS = ("rast-prod-jobs-3",)
+        try:
+            reader = RastFigvReader(jobs_dir)
+            index_file = tmp_path / "index.json"
+            summary = reader.build_user_index(index_path=index_file)
+            assert summary["indexed_jobs"] == 3
+            assert index_file.is_file()
+        finally:
+            mod._DEFAULT_SHARDS = original_shards
+
+    def test_list_jobs_for_user_returns_only_matching(self, tmp_path):
+        jobs_dir = self._build_two_user_tree(tmp_path)
+        from modelseed_api.services import rast_figv_reader as mod
+        original_shards = mod._DEFAULT_SHARDS
+        mod._DEFAULT_SHARDS = ("rast-prod-jobs-3",)
+        try:
+            reader = RastFigvReader(jobs_dir)
+            index_file = tmp_path / "index.json"
+            reader.build_user_index(index_path=index_file)
+            alice_jobs = reader.list_jobs_for_user("alice", index_path=index_file)
+            assert len(alice_jobs) == 2
+            for j in alice_jobs:
+                assert j["owner"] == "alice"
+            bob_jobs = reader.list_jobs_for_user("bob", index_path=index_file)
+            assert len(bob_jobs) == 1
+            assert bob_jobs[0]["owner"] == "bob"
+            no_jobs = reader.list_jobs_for_user("nobody_exists", index_path=index_file)
+            assert no_jobs == []
+        finally:
+            mod._DEFAULT_SHARDS = original_shards
+
+    def test_list_jobs_for_user_returns_expected_shape(self, tmp_path):
+        jobs_dir = self._build_two_user_tree(tmp_path)
+        from modelseed_api.services import rast_figv_reader as mod
+        original_shards = mod._DEFAULT_SHARDS
+        mod._DEFAULT_SHARDS = ("rast-prod-jobs-3",)
+        try:
+            reader = RastFigvReader(jobs_dir)
+            index_file = tmp_path / "index.json"
+            reader.build_user_index(index_path=index_file)
+            jobs = reader.list_jobs_for_user("alice", index_path=index_file)
+            sample = jobs[0]
+            for key in ("owner", "project", "id", "creation_time", "mod_time",
+                        "genome_size", "contig_count", "genome_id", "genome_name", "type"):
+                assert key in sample, f"missing field: {key}"
+        finally:
+            mod._DEFAULT_SHARDS = original_shards
+
+    def test_list_jobs_raises_when_index_missing(self, tmp_path):
+        reader = RastFigvReader(tmp_path)
+        with pytest.raises(FileNotFoundError):
+            reader.list_jobs_for_user("alice", index_path=tmp_path / "no_such_file.json")
+
+    def test_index_write_is_atomic(self, tmp_path):
+        """Tmp file + rename means readers never see partial JSON."""
+        jobs_dir = self._build_two_user_tree(tmp_path)
+        from modelseed_api.services import rast_figv_reader as mod
+        original_shards = mod._DEFAULT_SHARDS
+        mod._DEFAULT_SHARDS = ("rast-prod-jobs-3",)
+        try:
+            reader = RastFigvReader(jobs_dir)
+            index_file = tmp_path / "index.json"
+            reader.build_user_index(index_path=index_file)
+            # The tmp file should not exist after the rename.
+            assert not (tmp_path / "index.json.tmp").exists()
+            # The final file should be valid JSON
+            import json
+            with index_file.open() as f:
+                data = json.load(f)
+            assert isinstance(data, dict)
+        finally:
+            mod._DEFAULT_SHARDS = original_shards
+
+
 class TestLocationParser:
     def test_forward_strand(self):
         assert _parse_location_endpoints("NC_000913.3_337_2799") == (337, 2799)

@@ -60,6 +60,35 @@ async def lifespan(app: FastAPI):
     from modelseed_api.services.biochem_service import init_db
 
     init_db()
+
+    # Build the RAST job index in a background thread if RAST integration
+    # is configured. The index is required by /api/rast/jobs and takes
+    # a few minutes to build (walks all NFS shards, ~1.6M dirs). Building
+    # at startup ensures it's ready when the first user request arrives;
+    # while it's building, /api/rast/jobs returns 503 with a "retry shortly"
+    # message and clients can poll.
+    from modelseed_api.config import settings as _settings
+    if _settings.rast_jobs_dir:
+        import threading
+        from modelseed_api.services.rast_figv_reader import RastFigvReader
+
+        def _build_rast_index() -> None:
+            try:
+                reader = RastFigvReader(_settings.rast_jobs_dir)
+                index_path = _settings.rast_index_path or None
+                summary = reader.build_user_index(index_path=index_path)
+                logger.info("RAST index built: %s", summary)
+            except Exception as e:
+                logger.exception("RAST index build failed: %s", e)
+
+        thread = threading.Thread(
+            target=_build_rast_index,
+            name="rast-index-builder",
+            daemon=True,
+        )
+        thread.start()
+        logger.info("RAST index builder started in background thread")
+
     yield
 
 

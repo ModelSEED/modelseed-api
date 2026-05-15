@@ -67,56 +67,40 @@ class RastService:
     ) -> list[dict[str, Any]]:
         """Return all RAST annotation jobs the token's user owns.
 
-        Wraps MSSS `MSSeedSupportServer.list_rast_jobs`. MSSS uses the
-        `Authorization` header to identify the user; the response is a
-        list-of-list-of-dicts (KBase JSON-RPC style) which we flatten and
-        normalize into our flat list of job dicts.
+        Reads from the persistent FIGV-on-disk index at
+        `MODELSEED_RAST_INDEX_PATH` (built once at container startup by
+        `build_user_index()`). Sub-millisecond regardless of total job count.
+
+        Extracts `username` from the token's `un=...` field to filter the index.
 
         Raises:
-            RuntimeError: if MSSS is unreachable or returns an error.
+            RuntimeError: if the index doesn't exist yet or RAST jobs dir is unset.
         """
-        if not settings.modelseed_msss_url:
+        if not settings.rast_jobs_dir:
             raise RuntimeError(
-                "MSSS URL not configured (set MODELSEED_MSSS_URL); "
-                "cannot list RAST jobs."
+                "RAST jobs directory not configured (set MODELSEED_RAST_JOBS_DIR); "
+                "this deployment is not set up for RAST job listing."
             )
 
-        result = _call_msss_jsonrpc(
-            url=settings.modelseed_msss_url,
-            method="MSSeedSupportServer.list_rast_jobs",
-            params=[{}],
-            token=rast_token,
-            timeout=timeout,
-        )
+        # Extract username from token's `un=` segment. RAST tokens look like
+        # `un=jplfaria|tokenid=...`; PATRIC tokens like `un=jplfaria@patricbrc.org|...`.
+        # We strip the `@patricbrc.org` suffix because RAST job dirs use the
+        # bare username (e.g. USER file says "seaver" or "jplfaria").
+        username = ""
+        for seg in rast_token.split("|"):
+            if seg.startswith("un="):
+                username = seg[3:].strip().split("@")[0]
+                break
+        if not username:
+            raise RuntimeError(
+                "Could not extract `un=` username from token; "
+                "RAST job listing requires a properly formatted RAST or PATRIC token."
+            )
 
-        # MSSS returns the rows as a single list. Normalize each row's
-        # field types (MSSS gives stringy ints) to match the previous
-        # DB-query shape so existing API consumers don't see a change.
-        if not isinstance(result, list):
-            return []
-
-        def _to_int(v: Any) -> int:
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return 0
-
-        return [
-            {
-                "owner": str(row.get("owner") or ""),
-                "project": str(row.get("project") or row.get("project_name") or ""),
-                "id": str(row.get("id") or ""),
-                "creation_time": str(row.get("creation_time") or row.get("created_on") or ""),
-                "mod_time": str(row.get("mod_time") or row.get("last_modified") or ""),
-                "genome_size": _to_int(row.get("genome_size") or row.get("genome_bp_count")),
-                "contig_count": _to_int(row.get("contig_count") or row.get("genome_contig_count")),
-                "genome_id": str(row.get("genome_id") or ""),
-                "genome_name": str(row.get("genome_name") or ""),
-                "type": str(row.get("type") or ""),
-            }
-            for row in result
-            if isinstance(row, dict)
-        ]
+        from modelseed_api.services.rast_figv_reader import RastFigvReader
+        reader = RastFigvReader(settings.rast_jobs_dir)
+        index_path = settings.rast_index_path or None
+        return reader.list_jobs_for_user(username, index_path=index_path)
 
     def get_genome(
         self,
