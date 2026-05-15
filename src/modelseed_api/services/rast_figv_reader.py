@@ -113,27 +113,32 @@ class RastFigvReader:
         functions = self._parse_proposed_functions(rp_path / "proposed_functions")
 
         features: list[dict[str, Any]] = []
-        for feature_type, type_tag in (("peg", "peg"), ("rna", "rna")):
-            type_dir = rp_path / "Features" / feature_type
-            if not type_dir.is_dir():
-                continue
-            tbl = type_dir / "tbl"
-            fasta = type_dir / "fasta"
-            if not tbl.is_file():
-                continue
-            sequences = self._parse_features_fasta(fasta) if fasta.is_file() else {}
-            for fid, location in self._parse_features_tbl(tbl):
-                features.append(
-                    self._build_feature_record(
-                        fid=fid,
-                        location=location,
-                        type_tag=type_tag,
-                        genome_id=genome_id,
-                        job_id=job_id,
-                        sequence=sequences.get(fid, ""),
-                        function=functions.get(fid, ""),
+        # Iterate every Features/<type> subdirectory present (peg, rna, repeat,
+        # and any others RAST writes) so we cover all feature classes MSSS would
+        # have returned. Empty/missing dirs are skipped.
+        features_root = rp_path / "Features"
+        if features_root.is_dir():
+            for type_dir in sorted(features_root.iterdir()):
+                if not type_dir.is_dir():
+                    continue
+                type_tag = type_dir.name
+                tbl = type_dir / "tbl"
+                fasta = type_dir / "fasta"
+                if not tbl.is_file():
+                    continue
+                sequences = self._parse_features_fasta(fasta) if fasta.is_file() else {}
+                for fid, location in self._parse_features_tbl(tbl):
+                    features.append(
+                        self._build_feature_record(
+                            fid=fid,
+                            location=location,
+                            type_tag=type_tag,
+                            genome_id=genome_id,
+                            job_id=job_id,
+                            sequence=sequences.get(fid, ""),
+                            function=functions.get(fid, ""),
+                        )
                     )
-                )
 
         return {
             "genome": genome_id,
@@ -307,7 +312,10 @@ class RastFigvReader:
         except ValueError:
             min_loc, max_loc = 0, 0
         direction = "rev" if min_loc > max_loc else "for"
-        length = abs(max_loc - min_loc) + 1 if (min_loc or max_loc) else 0
+        # MSSS returns LENGTH as `abs(end - start)` (no +1). Match that
+        # convention so /api/rast/genome output stays byte-identical
+        # with the prior MSSS-wrap implementation.
+        length = abs(max_loc - min_loc) if (min_loc or max_loc) else 0
 
         return {
             "ID": [fid],
