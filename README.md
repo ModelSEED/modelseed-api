@@ -22,6 +22,32 @@ The production API is served at **https://modelseed.org/PMS/**.
 For deployment, restart procedures, on-call runbook, and infrastructure details, see the private operations repo: [`ModelSEED/modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops). Access is invite-only: ask Chris Henry or Jose Faria.
 
 
+## Run standalone (your own machine, no ANL setup)
+
+The repo ships a self-contained Docker image on GitHub Container Registry. Bundles all dependencies + biochemistry data; no PATRIC account or RAST account needed for the local-mode workflow.
+
+```bash
+docker run -p 8000:8000 ghcr.io/modelseed/modelseed-api:latest
+```
+
+Then open `http://localhost:8000/demo/` or hit the API directly:
+
+```bash
+curl http://localhost:8000/api/health
+curl 'http://localhost:8000/api/biochem/search?query=glucose&type=compounds&limit=5'
+```
+
+To persist models across container restarts, bind-mount a host directory:
+
+```bash
+docker run -p 8000:8000 \
+    -v ~/.modelseed:/data/modelseed \
+    ghcr.io/modelseed/modelseed-api:latest
+```
+
+The standalone image defaults to local-filesystem storage. Endpoints that need ANL infrastructure (`/api/workspace/*`, `/api/rast/*`) return a clean 503 unless their env vars are configured. See [`docs/STANDALONE.md`](docs/STANDALONE.md) for the full walkthrough including FASTA-to-model recipes and MCP server setup for Claude Desktop.
+
+
 ## API Endpoints
 
 Most endpoints require a PATRIC token in the `Authorization` header (not needed in local mode). Biochemistry endpoints are always public.

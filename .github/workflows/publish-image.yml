@@ -1,0 +1,152 @@
+# Build the standalone modelseed-api Docker image and publish to
+# ghcr.io/modelseed/modelseed-api.
+#
+# Tagging:
+#   - push to main:  ghcr.io/.../modelseed-api:latest + :main-<sha>
+#   - git tag v*:    ghcr.io/.../modelseed-api:vX.Y.Z + :latest
+#
+# Image is built from Dockerfile.standalone (clones sibling repos from
+# GitHub during build, includes bundled data). Production deployments on
+# poplar continue to use the regular Dockerfile + docker-compose; this
+# workflow is purely for the public/standalone artifact.
+#
+# Requires: nothing special. GITHUB_TOKEN is auto-provisioned and has
+# packages:write on the org-scoped registry (ghcr.io/modelseed/...).
+
+name: Publish standalone image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Only rebuild when something that actually affects the image changes.
+      - 'src/**'
+      - 'data/**'
+      - 'pyproject.toml'
+      - 'Dockerfile.standalone'
+      - '.dockerignore'
+      - '.github/workflows/publish-image.yml'
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      smoke_test:
+        description: 'Run smoke test after build (slower, but verifies image actually runs)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags + labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=main-,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') || startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build + push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.standalone
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions cache so subsequent builds reuse the heavy layers
+          # (system deps + cloned sibling repos) when those didn't change.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  smoke:
+    name: Smoke-test the published image
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.smoke_test }}
+    steps:
+      - name: Pull image
+        run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Start container
+        run: |
+          docker run -d --name smoke -p 8000:8000 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # Give uvicorn a moment to bind + biochem init to finish.
+          # biochem init reads ~45k compounds + 56k reactions; takes ~10s.
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            if curl -sf http://localhost:8000/api/health > /dev/null; then
+              echo "Healthy after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Hit /api/health
+        run: |
+          resp=$(curl -sf http://localhost:8000/api/health)
+          echo "Response: $resp"
+          echo "$resp" | grep -q '"status":"ok"'
+
+      - name: Hit /api/biochem/stats (no auth, exercises bundled data)
+        run: |
+          resp=$(curl -sf http://localhost:8000/api/biochem/stats)
+          echo "Response: $resp"
+          echo "$resp" | grep -q 'total_compounds'
+
+      - name: Hit /api/biochem/search (real query against bundled DB)
+        run: |
+          resp=$(curl -sf 'http://localhost:8000/api/biochem/search?query=glucose&type=compounds&limit=5')
+          echo "Response: $resp" | head -c 500
+          echo "$resp" | grep -q 'cpd00027'
+
+      - name: Confirm ANL-only endpoints return 503 (standalone-friendly defaults)
+        run: |
+          # No PATRIC token + no RAST DB configured = these should 503 cleanly,
+          # not crash or return 500.
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Authorization: bogus-token' \
+            http://localhost:8000/api/rast/jobs)
+          if [ "$code" != "503" ]; then
+            echo "FAIL: /api/rast/jobs returned $code, expected 503"
+            exit 1
+          fi
+          echo "OK: /api/rast/jobs returns 503 as expected (no MODELSEED_RAST_DB_HOST)"
+
+      - name: Show container logs (always, for diagnostics)
+        if: always()
+        run: docker logs smoke | tail -100
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f smoke

@@ -1,4 +1,13 @@
+# Keep the docker build context lean: only files the Dockerfiles
+# actually COPY need to be sent to the daemon. Tests, docs, git
+# history, and dev artifacts can be excluded.
+
+# Version control + git metadata
 .git
+.gitignore
+.gitattributes
+
+# Python build / install artifacts
 .venv
 venv
 __pycache__
@@ -6,10 +15,42 @@ __pycache__
 *.egg-info
 dist
 build
+
+# Test artifacts (tests run in CI, not inside the image)
+tests/
 .pytest_cache
 .coverage
 htmlcov
-.DS_Store
+
+# Docs (served by FastAPI from code, not from the markdown files)
+docs/
+
+# CI + tooling config
+.github
 .claude
+noxfile.py
+
+# Editor / IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Local secrets / config (never bake into the image)
 .env
-tests
+.env.*
+!.env.example
+
+# Local Docker iteration
+docker-compose.yml
+docker-compose.*.yml
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Logs and scratch
+*.log
+scratch
+tmp

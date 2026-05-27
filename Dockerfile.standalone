@@ -1,0 +1,99 @@
+# ModelSEED API: self-contained image for standalone use
+#
+# Unlike the production Dockerfile (which COPYs sibling repos from the
+# build host), this image clones all dependency repos from GitHub during
+# the build. Result: a single self-contained image that anyone can pull
+# from ghcr.io and run without setting up a local development environment.
+#
+# Build (CI): GitHub Actions builds + pushes to ghcr.io/modelseed/modelseed-api
+# Build (local, for testing):
+#     docker build -f Dockerfile.standalone -t modelseed-api:standalone .
+# Run:
+#     docker run -p 8000:8000 ghcr.io/modelseed/modelseed-api:latest
+#     # then hit http://localhost:8000/demo/
+#
+# The image includes ModelSEEDDatabase and ModelSEEDTemplates baked in;
+# total size ~1.5-2 GB. Larger than typical web-app images but eliminates
+# the need for separate data downloads.
+#
+# Defaults to local-storage mode (no PATRIC account needed). All ANL-
+# specific endpoints (workspace, RAST jobs, RAST genome) cleanly return
+# 503 unless their env vars are configured. See docs/STANDALONE.md.
+
+FROM python:3.11-slim
+
+# System deps: GLPK for cobra's linear solver, git for cloning, gcc/g++
+# for Python wheel builds that need compilation.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        glpk-utils \
+        libglpk-dev \
+        libexpat1 \
+        gcc \
+        g++ \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /deps
+
+# Clone dependency repos. Using `--depth 1` keeps the image smaller by
+# skipping git history. Pin to specific commits later if reproducible
+# builds become important; HEAD of each branch is fine for now.
+RUN git clone --depth 1 --branch master https://github.com/Fxe/cobrakbase.git && \
+    git clone --depth 1 --branch main https://github.com/cshenry/ModelSEEDpy.git && \
+    git clone --depth 1 --branch main https://github.com/cshenry/KBUtilLib.git && \
+    git clone --depth 1 --branch main https://github.com/kbaseapps/cb_annotation_ontology_api.git && \
+    git clone --depth 1 --branch dev https://github.com/ModelSEED/ModelSEEDDatabase.git && \
+    git clone --depth 1 --branch main https://github.com/ModelSEED/ModelSEEDTemplates.git
+
+# Install dependency packages in the order they expect.
+# cobrakbase first (no deps on others), then ModelSEEDpy, then KBUtilLib.
+RUN pip install --no-cache-dir -e /deps/cobrakbase && \
+    pip install --no-cache-dir -e /deps/ModelSEEDpy && \
+    pip install --no-cache-dir -e /deps/KBUtilLib
+
+WORKDIR /app
+
+# Copy modelseed-api source from build context. With CI, the context is
+# this repo's checkout; locally, run from the repo root.
+COPY src/ /app/src/
+COPY data/ /app/data/
+COPY pyproject.toml /app/
+
+# Install modelseed-api with the modeling+celery extras.
+RUN pip install --no-cache-dir -e ".[modeling,celery]"
+
+# numpy/scikit-learn occasionally end up at mismatched ABI versions
+# after the editable installs; force-reinstall to a coherent pair.
+# Then pre-download the ~25MB genome classifier files so the first
+# model build is fast.
+RUN pip install --no-cache-dir --force-reinstall numpy scikit-learn && \
+    python -c "from modelseedpy.helpers import get_classifier; get_classifier('knn_ACNP_RAST_filter_01_17_2023')"
+
+# Default configuration.
+ENV MODELSEED_MODELSEED_DB_PATH=/deps/ModelSEEDDatabase \
+    MODELSEED_TEMPLATES_PATH=/deps/ModelSEEDTemplates/templates/v7.0 \
+    MODELSEED_CB_ANNOTATION_ONTOLOGY_API_PATH=/deps/cb_annotation_ontology_api \
+    MODELSEED_JOB_STORE_DIR=/tmp/modelseed-jobs \
+    MODELSEED_HOST=0.0.0.0 \
+    MODELSEED_PORT=8000 \
+    MODELSEED_STORAGE_BACKEND=local \
+    MODELSEED_LOCAL_DATA_DIR=/data/modelseed
+# Local-storage by default: no PATRIC account needed, models persist
+# under MODELSEED_LOCAL_DATA_DIR. Users who want PATRIC-workspace mode
+# can override MODELSEED_STORAGE_BACKEND=workspace at run time.
+
+# WORKAROUND: cobrakbase.KBaseAPI() reads a token from ~/.kbase/token
+# even when not connecting to KBase. Required by MSReconstructionUtils
+# init. Dummy value is fine.
+ENV KB_AUTH_TOKEN=unused
+RUN mkdir -p /root/.kbase && echo "unused" > /root/.kbase/token
+
+# Make sure the default local-data dir exists so first-run writes work
+# without the user pre-creating + bind-mounting it.
+RUN mkdir -p /data/modelseed && chmod 777 /data/modelseed
+VOLUME /data/modelseed
+
+EXPOSE 8000
+
+WORKDIR /app/src
+CMD ["python", "-m", "uvicorn", "modelseed_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
