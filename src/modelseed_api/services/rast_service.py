@@ -65,6 +65,12 @@ class RastService:
         connection (and single set of credentials) suffices. The
         `modelseed` MySQL user must have SELECT on both DBs.
 
+        PATRIC tokens encode the username as `jplfaria@patricbrc.org`
+        but the RAST `WebAppBackend2.User` table stores bare logins
+        (`jplfaria`). We strip the `@<domain>` suffix here so callers
+        can pass either form transparently. RAST tokens always have
+        the bare form and pass through unchanged.
+
         Raises:
             RuntimeError: if the DB host or credentials aren't configured.
         """
@@ -72,6 +78,9 @@ class RastService:
             raise RuntimeError(
                 "RAST database not configured (set MODELSEED_RAST_DB_HOST)"
             )
+
+        # Strip @patricbrc.org-style suffix; RAST stores bare usernames.
+        bare_username = username.split("@", 1)[0]
 
         import pymysql
 
@@ -91,7 +100,7 @@ class RastService:
                 # User -> internal _id (User table lives in WebAppBackend2).
                 cur.execute(
                     "SELECT _id FROM WebAppBackend2.User WHERE login = %s",
-                    (username,),
+                    (bare_username,),
                 )
                 row = cur.fetchone()
                 if not row:
@@ -116,7 +125,7 @@ class RastService:
 
         return [
             {
-                "owner": username,
+                "owner": bare_username,
                 "project": r.get("project_name", "") or "",
                 "id": str(r.get("id", "")),
                 "creation_time": str(r.get("created_on", "")),
