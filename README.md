@@ -350,7 +350,12 @@ All settings load from environment variables with the `MODELSEED_` prefix or fro
 | `MODELSEED_CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery Redis broker URL |
 | `MODELSEED_CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery Redis result backend URL |
 | `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
-| `MODELSEED_MSSS_URL` | `https://modelseed.org/services/ms_fba` | Legacy MSSeedSupportServer JSON-RPC endpoint (used by RAST endpoints) |
+| `MODELSEED_RAST_JOBS_DIR` | (empty) | Filesystem path to RAST job dirs (`/api/rast/genome`). Leave empty to disable. |
+| `MODELSEED_RAST_DB_HOST` | (empty) | RAST job database host (`/api/rast/jobs`). Leave empty to disable. |
+| `MODELSEED_RAST_DB_PORT` | `3306` | RAST job database port |
+| `MODELSEED_RAST_DB_USER` | (empty) | RAST job database user |
+| `MODELSEED_RAST_DB_PASSWORD` | (empty) | RAST job database password |
+| `MODELSEED_RAST_DB_NAME` | `RastProdJobCache` | RAST job database name |
 
 
 ## Project structure
@@ -370,7 +375,7 @@ src/
       model_service.py        #   Model CRUD, gapfill management
       biochem_service.py      #   ModelSEEDDatabase queries
       export_service.py       #   SBML / CobraPy export
-      rast_service.py         #   RAST endpoints (wraps MSSS)
+      rast_service.py         #   RAST endpoints (direct MySQL + filesystem)
     jobs/                     # Job dispatch (shared with MCP)
       dispatcher.py           #   Subprocess or Celery dispatch
       store.py                #   Job state (JSON files)

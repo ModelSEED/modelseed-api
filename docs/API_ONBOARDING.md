@@ -1079,10 +1079,10 @@ Each object is `[path, type, metadata_dict, data_string]`.
 
 ### RAST
 
-RAST (Rapid Annotation using Subsystem Technology) integration. Two endpoints, two backends:
+RAST (Rapid Annotation using Subsystem Technology) integration. Two endpoints, two backends, neither touching MSSS:
 
-1. **`GET /api/rast/jobs`** lists a user's RAST annotation jobs (still wraps MSSeedSupportServer `list_rast_jobs` over JSON-RPC; thin and fast).
-2. **`GET /api/rast/genome`** fetches an annotated genome from a specific RAST job by reading the FIGV-format files at `<MODELSEED_RAST_JOBS_DIR>/<job_id>/rp/<genome_id>/` directly. No MSSS dependency; reads NFS-mounted-read-only data. Translator output is byte-equivalent to the previous MSSS-wrap (verified by differential test).
+1. **`GET /api/rast/jobs`** queries `RastProdJobCache.Job` joined with `WebAppBackend2.User` on chestnut MySQL directly (`MODELSEED_RAST_DB_*` env). Real-time, sub-millisecond.
+2. **`GET /api/rast/genome`** fetches an annotated genome from a specific RAST job by reading the FIGV-format files at `<MODELSEED_RAST_JOBS_DIR>/<job_id>/rp/<genome_id>/` directly. NFS-mounted read-only.
 
 Together they support the "Build Model from RAST job" workflow:
 
@@ -1095,13 +1095,13 @@ Together they support the "Build Model from RAST job" workflow:
    (which internally does:                   GET /api/rast/genome -> translate -> reconstruct)
 ```
 
-Both endpoints are config-gated. Production sets `MODELSEED_MSSS_URL` and `MODELSEED_RAST_JOBS_DIR` via .env; deployments without these (e.g. local/standalone use of this codebase) get a clean 503 from the respective endpoint.
+Both endpoints are config-gated. Production sets `MODELSEED_RAST_DB_*` and `MODELSEED_RAST_JOBS_DIR` via .env; standalone deployments leave them empty and get a clean 503 from the respective endpoint.
 
 #### `GET /api/rast/jobs`: list user's RAST annotation jobs
 
-Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC. The MSSS service authenticates the user via the token's `un=` field and returns their owned jobs.
+Queries the RAST job database directly via MySQL. The cross-database query first resolves the caller's `un=` username to an internal `_id` in `WebAppBackend2.User`, then returns all jobs in `RastProdJobCache.Job` owned by that id, ordered by most-recent.
 
-**Auth:** RAST token (PATRIC tokens get "Username not found" from MSSS; the endpoint surfaces that as 401).
+**Auth:** Any valid RAST or PATRIC token; the `un=` field is matched against the RAST job database.
 
 **Query Parameters:** none.
 
@@ -1110,26 +1110,29 @@ Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC. The MSSS service 
 ```json
 [
   {
-    "job_id": "12345",
-    "genome_id": "83332.12",
-    "genome_name": "Mycobacterium tuberculosis H37Rv",
-    "status": "complete",
-    "creation_time": "2025-11-04 09:12:33"
+    "owner": "jplfaria",
+    "project": "jplfaria_85962",
+    "id": "297911",
+    "creation_time": "2015-10-27 17:33:20",
+    "mod_time": "2015-10-29 17:59:49",
+    "genome_size": 1667867,
+    "contig_count": 1,
+    "genome_id": "85962.43",
+    "genome_name": "Helicobacter pylori 26695",
+    "type": "Genome"
   }
 ]
 ```
-
-(Exact fields depend on the RAST database schema; expect at minimum `job_id`, `genome_id`, `status`, plus a timestamp.)
 
 **Error responses:**
 
 | Code | Meaning |
 |------|---------|
-| 401 | PATRIC token used (MSSS returns "Username not found") |
-| 502 | MSSS returned an error |
-| 503 | `MODELSEED_MSSS_URL` not configured (deployment doesn't have RAST integration) |
+| 401 | Missing/invalid token (handled by auth dependency) |
+| 502 | RAST database query failed (network, auth, or schema error) |
+| 503 | `MODELSEED_RAST_DB_HOST` not configured for this deployment, or pymysql not installed |
 
-This endpoint is optional; if your deployment doesn't have MSSS configured, clients get HTTP 503.
+This endpoint is optional; if your deployment doesn't have the RAST DB credentials configured, clients get HTTP 503.
 
 #### `GET /api/rast/genome`: fetch an annotated RAST genome
 
@@ -1164,7 +1167,7 @@ The reconstruct endpoint accepts three mutually-exclusive input modes:
 |---|---|---|
 | BV-BRC ID | `genome` (genome ID) | Fetches genome from BV-BRC API, runs reconstruction |
 | FASTA | `genome` (display name), `genome_fasta` (protein FASTA) | Submits to RAST for annotation, then reconstructs |
-| RAST job | `genome` (display name), `rast_job_id`, `rast_genome_id` | Fetches already-annotated genome via MSSS, skips re-annotation, reconstructs |
+| RAST job | `genome` (display name), `rast_job_id`, `rast_genome_id` | Reads already-annotated genome from the FIGV-format filesystem, skips re-annotation, reconstructs |
 
 In RAST job mode, `genome` is just a label (used for error messages and saved metadata); the actual genome ID used for the workspace path is `rast_genome_id`.
 
