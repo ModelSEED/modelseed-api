@@ -1,15 +1,14 @@
 """RAST legacy endpoints: list annotation jobs and fetch annotated genomes.
 
-Two endpoints:
-- `GET /jobs`: lists the user's RAST annotation jobs (still wraps MSSS;
-  filesystem-based replacement deferred to a follow-up PR).
-- `GET /genome`: fetches a RAST-annotated genome directly from the
+Two endpoints, both backed by direct access (no MSSS):
+- `GET /jobs`: queries the RAST job database directly via MySQL
+  (`MODELSEED_RAST_DB_*` settings).
+- `GET /genome`: reads RAST annotation files directly from the
   FIGV-format filesystem at `MODELSEED_RAST_JOBS_DIR`.
 
-Both endpoints are config-gated: production deployments set
-`MODELSEED_RAST_JOBS_DIR` (and `MODELSEED_MSSS_URL`); local/standalone
-users leave them empty and get a clean 503 explaining the endpoint isn't
-configured for this deployment.
+Both endpoints are config-gated: production sets the DB credentials and
+the jobs dir via env; local/standalone deployments leave them empty and
+get a clean 503.
 """
 
 import logging
@@ -31,41 +30,43 @@ async def list_rast_jobs(
 ) -> Any:
     """List the authenticated user's RAST annotation jobs.
 
-    Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC.
+    Queries chestnut MySQL directly (RastProdJobCache.Job joined with
+    WebAppBackend2.User). Real-time, no MSSS.
 
-    Auth: only RAST tokens are accepted by MSSS upstream. PATRIC tokens
-    are rejected with "Username not found"; this endpoint catches that
-    and returns 401 with a clear message.
+    Auth: PATRIC or RAST token; the `un=` username field is matched
+    against the RAST job database.
 
     Status codes:
       200: list of job dicts
-      401: missing/invalid token, or PATRIC token used (RAST-only)
-      502: MSSS reachable but returned an error
-      503: MODELSEED_MSSS_URL not configured
+      401: missing/invalid token (handled by auth dependency)
+      502: RAST database query failed (network, auth, or schema error)
+      503: RAST database not configured (no MODELSEED_RAST_DB_HOST),
+           or pymysql not installed
     """
-    if not settings.modelseed_msss_url:
+    if not settings.rast_db_host:
         raise HTTPException(
             status_code=503,
-            detail="MSSS URL not configured (set MODELSEED_MSSS_URL)",
+            detail="RAST database not configured (set MODELSEED_RAST_DB_HOST)",
         )
 
     from modelseed_api.services.rast_service import RastService
 
-    svc = RastService()
     try:
-        return svc.list_jobs(rast_token=user.token)
+        svc = RastService()
+        return svc.list_jobs(user.username)
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="pymysql not installed (pip install pymysql)",
+        )
     except RuntimeError as e:
-        msg = str(e)
-        if "Username not found" in msg:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "MSSS rejected token (use a RAST token, not a PATRIC token, "
-                    "for /api/rast/jobs)"
-                ),
-            )
-        logger.error("MSSS list_rast_jobs failed: %s", msg)
-        raise HTTPException(status_code=502, detail=f"MSSS error: {msg[:300]}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error("RAST database error: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail=f"RAST database error: {str(e)[:300]}",
+        )
 
 
 @router.get("/genome")

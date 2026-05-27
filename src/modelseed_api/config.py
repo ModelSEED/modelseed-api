@@ -55,13 +55,6 @@ class Settings(BaseSettings):
     rast_db_password: str = ""
     rast_db_name: str = "RastProdJobCache"
 
-    # MSSeedSupportServer JSON-RPC URL (used by /api/rast/genome to fetch
-    # annotated genomes from RAST jobs). Leave empty to disable that endpoint.
-    # DEPRECATED once rast_jobs_dir is configured: the filesystem reader
-    # supersedes the MSSS proxy. Kept temporarily as a fallback during the
-    # bake period; will be removed in a follow-up PR.
-    modelseed_msss_url: str = "https://modelseed.org/services/ms_fba"
-
     # RAST jobs filesystem directory (used by /api/rast/genome to fetch
     # annotated genomes directly from disk via the FIGV-on-disk format).
     # Leave empty (default) for local/standalone deployments without RAST

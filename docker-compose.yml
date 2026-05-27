@@ -18,6 +18,14 @@ services:
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
       MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
+      # RAST DB credentials (chestnut MySQL). Values come from the host's
+      # .env file in the docker compose run directory. Production sets
+      # these to connect to RastProdJobCache + WebAppBackend2 on chestnut.
+      MODELSEED_RAST_DB_HOST: "${MODELSEED_RAST_DB_HOST:-}"
+      MODELSEED_RAST_DB_PORT: "${MODELSEED_RAST_DB_PORT:-3306}"
+      MODELSEED_RAST_DB_USER: "${MODELSEED_RAST_DB_USER:-}"
+      MODELSEED_RAST_DB_PASSWORD: "${MODELSEED_RAST_DB_PASSWORD:-}"
+      MODELSEED_RAST_DB_NAME: "${MODELSEED_RAST_DB_NAME:-RastProdJobCache}"
     restart: unless-stopped
     networks:
       - default
@@ -45,6 +53,13 @@ services:
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
       MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
+      # Worker doesn't currently call list_jobs but symmetry keeps
+      # container parity simple; harmless if unused.
+      MODELSEED_RAST_DB_HOST: "${MODELSEED_RAST_DB_HOST:-}"
+      MODELSEED_RAST_DB_PORT: "${MODELSEED_RAST_DB_PORT:-3306}"
+      MODELSEED_RAST_DB_USER: "${MODELSEED_RAST_DB_USER:-}"
+      MODELSEED_RAST_DB_PASSWORD: "${MODELSEED_RAST_DB_PASSWORD:-}"
+      MODELSEED_RAST_DB_NAME: "${MODELSEED_RAST_DB_NAME:-RastProdJobCache}"
     restart: unless-stopped
     # Give a long-running task (reconstruct + gapfill ~6-10 min, FBA ~10 s)
     # time to finish on SIGTERM before docker SIGKILLs.  Without this,

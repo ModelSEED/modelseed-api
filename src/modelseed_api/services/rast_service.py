@@ -1,23 +1,21 @@
 """RAST integration service.
 
-Both methods wrap MSSeedSupportServer (MSSS) over JSON-RPC:
+Two methods, two backends, neither touching MSSeedSupportServer:
 
-1. **`RastService.list_jobs()`** wraps `list_rast_jobs`. We tried direct
-   MySQL access from poplar but `bio-admin.cels.anl.gov:3306` is firewalled.
-   MSSS reaches the DB fine from branch, so we proxy through it.
-2. **`RastService.get_genome()`** wraps `getRastGenomeData` and translates
-   the response into a KBase Genome dict ready for our reconstruction
-   pipeline.
+1. **`RastService.list_jobs()`** queries the RAST job database directly
+   over MySQL (chestnut hosts `RastProdJobCache` + `WebAppBackend2`).
+   Conduit from poplar to chestnut:3306 opened by Dan 2026-05-27.
+2. **`RastService.get_genome()`** reads RAST annotation files directly
+   from the FIGV-format filesystem at `MODELSEED_RAST_JOBS_DIR` via
+   `RastFigvReader`, then translates the result into a KBase Genome dict
+   ready for our reconstruction pipeline.
 
-This service is a pure proxy. Eventually MSSS itself can be retired
-(it's on EOL hardware) and we'd port the logic, but that requires moving
-the underlying RAST data files to a host poplar can reach.
+After 2026-05-27, modelseed-api has no MSSS dependency.
 
 The translator is implemented as a module-level pure function
 `translate_rast_to_kbase_genome()` so it can be unit-tested against saved
-fixture data without touching MSSS at all. Output shape mirrors
-`BVBRCUtils.build_kbase_genome_from_api()` in KBUtilLib
-(`src/kbutillib/bvbrc_utils.py:170`).
+fixture data. Output shape mirrors `BVBRCUtils.build_kbase_genome_from_api()`
+in KBUtilLib (`src/kbutillib/bvbrc_utils.py:170`).
 """
 
 from __future__ import annotations
@@ -28,101 +26,108 @@ import logging
 import re
 from typing import Any
 
-import httpx
-
 from modelseed_api.config import settings
 
 logger = logging.getLogger("modelseed_api.rast")
 
 
 # =====================================================================
-# RastService: DB listing + MSSS-backed genome fetch
+# RastService: direct MySQL listing + filesystem genome fetch
 # =====================================================================
 
 
 class RastService:
-    """RAST integration: filesystem reader for genome data, MSSS proxy for listings.
+    """RAST integration: direct MySQL for listings, filesystem reader for genomes.
 
-    Two methods, two backends:
+    - `list_jobs(...)` queries `RastProdJobCache.Job` joined with
+      `WebAppBackend2.User` directly on chestnut MySQL. Real-time, no
+      proxy, no staleness.
+    - `get_genome(...)` reads `<MODELSEED_RAST_JOBS_DIR>/<job_id>/` via
+      `RastFigvReader`. No network, no DB.
 
-    - `get_genome(...)` reads directly from `<MODELSEED_RAST_JOBS_DIR>/<job_id>/`
-      via `RastFigvReader`. No network, no MSSS dependency.
-
-    - `list_jobs(...)` still wraps `MSSeedSupportServer.list_rast_jobs` over
-      JSON-RPC. The filesystem alternative would require building a
-      ~1.6M-entry `job_id -> user` index (live walks across 13 NFS shards
-      time out past 10 minutes per Dan's "don't list the main directory"
-      warning). Since list_rast_jobs is fast and lightweight on MSSS's side
-      and not on any hot path, the simpler design is to leave it MSSS-wrapped
-      until MSSS is actually decommissioned. If/when MSSS dies, replace
-      `list_jobs` with a background-built index (see plan file Part 4
-      "Out of scope for today's slice").
+    Neither method touches MSSS. The `ms_fba` JSON-RPC service can be
+    decommissioned once this is in production for a few days.
     """
 
     def list_jobs(
         self,
-        rast_token: str,
-        *,
-        timeout: float = 60.0,
+        username: str,
     ) -> list[dict[str, Any]]:
-        """Return all RAST annotation jobs the token's user owns.
+        """Return all RAST annotation jobs owned by `username`.
 
-        Wraps MSSS `MSSeedSupportServer.list_rast_jobs` over JSON-RPC. MSSS
-        uses the `Authorization` header to identify the user; we normalize
-        the row shapes (MSSS returns stringy ints) into a stable list of
-        job dicts for our consumers.
+        Queries chestnut MySQL directly:
+        1. `WebAppBackend2.User` to map login -> internal `_id`
+        2. `RastProdJobCache.Job` to fetch jobs owned by that `_id`
 
-        We continue wrapping MSSS for listings (instead of using the
-        filesystem-index alternative committed on the shelf) because:
-        - It works today and is a thin, fast HTTPS round-trip.
-        - The filesystem-index alternative needs a 60+ minute cold build.
-        - When MSSS is eventually decommissioned, either Dan opens a
-          conduit to the chestnut MySQL DB (preferred, ~10 lines of code)
-          or we fall back to the on-the-shelf filesystem index (see
-          `RastFigvReader.list_jobs_for_user` and the build/delta scripts
-          under `scripts/`).
+        Real-time, sub-millisecond. No MSSS, no staleness.
+
+        The cross-DB query uses fully-qualified table names so a single
+        connection (and single set of credentials) suffices. The
+        `modelseed` MySQL user must have SELECT on both DBs.
 
         Raises:
-            RuntimeError: if MSSS is unreachable or returns an error.
+            RuntimeError: if the DB host or credentials aren't configured.
         """
-        if not settings.modelseed_msss_url:
+        if not settings.rast_db_host:
             raise RuntimeError(
-                "MSSS URL not configured (set MODELSEED_MSSS_URL); "
-                "cannot list RAST jobs."
+                "RAST database not configured (set MODELSEED_RAST_DB_HOST)"
             )
 
-        result = _call_msss_jsonrpc(
-            url=settings.modelseed_msss_url,
-            method="MSSeedSupportServer.list_rast_jobs",
-            params=[{}],
-            token=rast_token,
-            timeout=timeout,
+        import pymysql
+
+        conn = pymysql.connect(
+            host=settings.rast_db_host,
+            port=settings.rast_db_port,
+            user=settings.rast_db_user,
+            password=settings.rast_db_password,
+            database=settings.rast_db_name,
+            connect_timeout=10,
+            read_timeout=30,
+            cursorclass=pymysql.cursors.DictCursor,
         )
 
-        if not isinstance(result, list):
-            return []
+        try:
+            with conn.cursor() as cur:
+                # User -> internal _id (User table lives in WebAppBackend2).
+                cur.execute(
+                    "SELECT _id FROM WebAppBackend2.User WHERE login = %s",
+                    (username,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return []
+                user_id = row["_id"]
 
-        def _to_int(v: Any) -> int:
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return 0
+                # Jobs owned by that internal id (Job table lives in RastProdJobCache).
+                cur.execute(
+                    """
+                    SELECT id, owner, project_name, created_on, last_modified,
+                           genome_bp_count, genome_contig_count, genome_id,
+                           genome_name, type
+                    FROM RastProdJobCache.Job
+                    WHERE owner = %s
+                    ORDER BY last_modified DESC
+                    """,
+                    (user_id,),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
 
         return [
             {
-                "owner": str(row.get("owner") or ""),
-                "project": str(row.get("project") or row.get("project_name") or ""),
-                "id": str(row.get("id") or ""),
-                "creation_time": str(row.get("creation_time") or row.get("created_on") or ""),
-                "mod_time": str(row.get("mod_time") or row.get("last_modified") or ""),
-                "genome_size": _to_int(row.get("genome_size") or row.get("genome_bp_count")),
-                "contig_count": _to_int(row.get("contig_count") or row.get("genome_contig_count")),
-                "genome_id": str(row.get("genome_id") or ""),
-                "genome_name": str(row.get("genome_name") or ""),
-                "type": str(row.get("type") or ""),
+                "owner": username,
+                "project": r.get("project_name", "") or "",
+                "id": str(r.get("id", "")),
+                "creation_time": str(r.get("created_on", "")),
+                "mod_time": str(r.get("last_modified", "")),
+                "genome_size": r.get("genome_bp_count", 0) or 0,
+                "contig_count": r.get("genome_contig_count", 0) or 0,
+                "genome_id": r.get("genome_id", "") or "",
+                "genome_name": r.get("genome_name", "") or "",
+                "type": r.get("type", "") or "",
             }
-            for row in result
-            if isinstance(row, dict)
+            for r in rows
         ]
 
     def get_genome(
@@ -165,63 +170,6 @@ class RastService:
         reader = RastFigvReader(settings.rast_jobs_dir)
         rast_genome = reader.read_rast_genome(job_id, genome_id)
         return translate_rast_to_kbase_genome(rast_genome, job_id=job_id)
-
-
-# =====================================================================
-# JSON-RPC client for MSSS
-# =====================================================================
-
-
-def _call_msss_jsonrpc(
-    *,
-    url: str,
-    method: str,
-    params: list[Any],
-    token: str,
-    timeout: float = 60.0,
-) -> Any:
-    """POST a JSON-RPC v1.1 call to MSSS and return the unwrapped result.
-
-    MSSS authenticates via Authorization header (RAST tokens only; PATRIC
-    tokens are rejected with "Username not found"). Method names follow
-    KBase convention: "PackageName.method_name".
-    """
-    body = {
-        "version": "1.1",
-        "method": method,
-        "params": params,
-        "id": method,
-    }
-    headers = {"Content-Type": "application/json", "Authorization": token}
-    try:
-        r = httpx.post(url, json=body, headers=headers, timeout=timeout)
-    except httpx.HTTPError as exc:
-        raise RuntimeError(f"MSSS call failed ({method}): {exc}") from exc
-
-    try:
-        envelope = r.json()
-    except ValueError as exc:
-        raise RuntimeError(
-            f"MSSS returned non-JSON response ({method}, status {r.status_code}): "
-            f"{r.text[:300]}"
-        ) from exc
-
-    if "error" in envelope:
-        err = envelope["error"]
-        msg = (
-            err.get("message")
-            or err.get("error")
-            or str(err)
-        )
-        raise RuntimeError(f"MSSS {method} error: {str(msg)[:500]}")
-
-    result = envelope.get("result")
-    if not isinstance(result, list) or not result:
-        raise RuntimeError(
-            f"MSSS {method} returned unexpected result shape: "
-            f"{type(result).__name__}"
-        )
-    return result[0]
 
 
 # =====================================================================
