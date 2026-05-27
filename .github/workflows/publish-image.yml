@@ -92,6 +92,15 @@ jobs:
     timeout-minutes: 10
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.smoke_test }}
     steps:
+      - name: Log in to ghcr.io
+        # Image package is private by default; even reading the manifest
+        # requires authentication. Use the built-in GITHUB_TOKEN.
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Pull image
         run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
