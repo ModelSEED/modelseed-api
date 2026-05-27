@@ -14,13 +14,6 @@ from tests.live.assertions.ui import (
 )
 
 # All non-auth public pages on modelseed.org (mirrored from the smoke layer).
-# `/about/version` is intentionally excluded: the page fetches
-# https://modelseed.org/api/version (no /PMS/ prefix), which is routed by
-# nginx to a legacy backend that no longer exists and returns 502. That's
-# a frontend bug in Vibhav's repo (the fetch should target
-# /PMS/api/health which has the version info), tracked separately. The
-# page still renders for users (error is console-only); re-add to this
-# list once Vibhav's fix is in.
 PUBLIC_PAGES = [
     "/",
     "/genomes",
@@ -34,6 +27,7 @@ PUBLIC_PAGES = [
     "/projects",
     "/events",
     "/about",
+    "/about/version",
     "/about/data-sources",
 ]
 
@@ -57,20 +51,13 @@ def test_pages_no_console_errors_parametrized(page, target_env, path: str) -> No
     assert not real, f"Console errors on {path}: {real}"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Page fetches https://modelseed.org/api/version which is routed by nginx "
-        "to a legacy backend that returns 502. Frontend bug in Vibhav's repo; "
-        "fetch should target /PMS/api/health instead. Page renders fine for "
-        "users (error is console-only). Remove xfail once frontend is patched."
-    ),
-    strict=False,
-)
 def test_about_version_shows_current_build(page, target_env) -> None:
     """U12: /about/version page shows version info."""
     page.goto(target_env.base_url + "/about/version", wait_until="domcontentloaded")
     wait_for_network_idle(page)
     body_text = page.text_content("body") or ""
+    # The page lists multiple service URLs and a version number; we just
+    # verify the page rendered something recognizable.
     assert "modelseed" in body_text.lower() or "version" in body_text.lower(), (
         "Version page body doesn't contain expected content"
     )
