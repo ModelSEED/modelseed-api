@@ -18,17 +18,10 @@ name: Publish standalone image
 on:
   push:
     branches: [main]
-    paths:
-      # Only rebuild when something that actually affects the image changes.
-      - 'src/**'
-      - 'data/**'
-      - 'pyproject.toml'
-      - 'Dockerfile.standalone'
-      - '.dockerignore'
-      - '.github/workflows/publish-image.yml'
-  push:
     tags:
       - 'v*'
+    # paths filter applies to both branches and tags, so omit it; rely on
+    # buildx GHA caching to make repeat builds cheap when nothing changed.
   workflow_dispatch:
     inputs:
       smoke_test:
