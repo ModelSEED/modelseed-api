@@ -35,7 +35,11 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Docker requires lowercase image references. github.repository preserves
+  # the org's case (ModelSEED), so hardcode the lowercase form here. The
+  # docker/metadata-action in the build step auto-lowercases, but plain
+  # shell-level uses (smoke step) need a pre-lowercased value.
+  IMAGE_NAME: modelseed/modelseed-api
 
 jobs:
   build-and-push:
