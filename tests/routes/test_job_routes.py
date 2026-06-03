@@ -28,29 +28,19 @@ class TestReconstructJob:
         assert isinstance(job_id, str)
         assert len(job_id) > 0
 
-    def test_with_genome_fasta(self, local_client, auth_headers):
+    def test_with_protein_fasta(self, local_client, auth_headers):
         resp = local_client.post("/api/jobs/reconstruct", json={
             "genome": "custom",
             "genome_fasta": ">prot\nMKKK",
         }, headers=auth_headers)
         assert resp.status_code == 200
 
-    def test_rejects_dna_fasta_with_helpful_message(self, local_client, auth_headers):
+    def test_with_dna_fasta(self, local_client, auth_headers):
+        # DNA input is now first-class: schema accepts it, the task layer
+        # routes it through the contig (gene calling + annotation) pipeline.
         resp = local_client.post("/api/jobs/reconstruct", json={
             "genome": "custom",
             "genome_fasta": ">contig1\nGATATGGGACGTAGCTGCTAGCATCGATCGATCGTAGCTAG",
-        }, headers=auth_headers)
-        assert resp.status_code == 422
-        body = resp.text.lower()
-        assert "nucleotide" in body or "dna" in body
-        assert "protein" in body
-
-    def test_accepts_protein_fasta_with_some_acgt_residues(self, local_client, auth_headers):
-        # Real proteins often contain runs of A/C/G/T amino acids; the
-        # nucleotide check must use the 90% threshold, not any-match.
-        resp = local_client.post("/api/jobs/reconstruct", json={
-            "genome": "custom",
-            "genome_fasta": ">prot\nMKKKACGTACGTPLQRSVWHEDFY",
         }, headers=auth_headers)
         assert resp.status_code == 200
 

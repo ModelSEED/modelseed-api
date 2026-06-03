@@ -38,8 +38,10 @@ class ReconstructionRequest(BaseModel):
 
     Three input modes (mutually exclusive, exactly one must be primary):
       - `genome`: BV-BRC genome ID (e.g. "83332.12"). Default path.
-      - `genome_fasta`: protein FASTA content. Skips BV-BRC lookup; submits
-        to RAST for annotation. `genome` is treated as a display name.
+      - `genome_fasta`: FASTA content (DNA contigs or protein sequences;
+        auto-detected). Skips BV-BRC lookup; routes through the RAST
+        annotation service (with gene calling first for DNA). `genome` is
+        treated as a display name.
       - `rast_job_id`: ID of an existing RAST annotation job. Skips both
         BV-BRC lookup and RAST submission; reads the already-annotated
         genome from the RAST jobs filesystem and feeds it directly into
@@ -81,37 +83,6 @@ class ReconstructionRequest(BaseModel):
                 "(the RAST genome ID inside the job, e.g. '85962.43')"
             )
         return self
-
-    @model_validator(mode="after")
-    def _validate_genome_fasta_is_protein(self) -> "ReconstructionRequest":
-        # RAST kmer annotation operates on protein space. DNA/RNA input
-        # silently produces a zero-role genome which then crashes
-        # MSGenomeClassifier with a misleading "annotate with RAST" error
-        # (modelseedpy/ml/predict_phenotype.py:96). Catch it at the door
-        # with an explanation users can act on.
-        if not self.genome_fasta:
-            return self
-        seq_chars = [
-            c
-            for line in self.genome_fasta.splitlines()
-            if not line.startswith(">")
-            for c in line.strip()
-            if not c.isspace()
-        ]
-        if not seq_chars:
-            return self
-        nt_chars = sum(1 for c in seq_chars if c.upper() in "ACGTUN")
-        if nt_chars / len(seq_chars) >= 0.9:
-            raise ValueError(
-                "genome_fasta appears to be a nucleotide (DNA/RNA) sequence. "
-                "This endpoint requires PROTEIN FASTA. The internal annotation "
-                "step uses RAST kmer matching on protein space; nucleotide "
-                "input produces zero annotations and the reconstruction fails "
-                "downstream. Translate your sequence to protein first (e.g. "
-                "EMBOSS `transeq`, or NCBI's ORFfinder) and resubmit."
-            )
-        return self
-
 
 class GapfillRequest(BaseModel):
     """Request to gapfill a model."""

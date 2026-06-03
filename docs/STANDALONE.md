@@ -47,7 +47,7 @@ Now models, gapfill solutions, FBA results, and uploaded media live in `~/.model
 | `/api/media/public` | yes | bundled public media formulations |
 | `/api/models/*` | yes | local filesystem storage |
 | `/api/jobs/reconstruct` (BV-BRC genome ID) | with PATRIC token | hits BV-BRC API; PATRIC token in `Authorization` header |
-| `/api/jobs/reconstruct` (FASTA upload) | yes | anonymous RAST kmer annotation via the public SEED endpoint at `tutorial.theseed.org` |
+| `/api/jobs/reconstruct` (FASTA upload, DNA or protein) | yes | anonymous RAST annotation via `tutorial.theseed.org`. DNA inputs are gene-called server-side (prodigal + glimmer3) before annotation; protein inputs skip straight to annotation. Auto-detected from sequence content. |
 | `/api/jobs/reconstruct` (RAST job id) | only on ANL setup | needs `/vol/rast-prod/jobs` filesystem mount |
 | `/api/jobs/gapfill` | yes | pure local compute |
 | `/api/jobs/fba` | yes | pure local compute |
@@ -58,12 +58,13 @@ Now models, gapfill solutions, FBA results, and uploaded media live in `~/.model
 
 The ANL-only endpoints return `503 RAST integration not configured for this deployment` (or similar) when their env vars aren't set. They don't crash and don't break the rest of the API.
 
-## Building a model from a protein FASTA (no auth needed)
+## Building a model from a FASTA (no auth needed)
 
-The simplest end-to-end workflow that requires only an internet connection:
+The simplest end-to-end workflow that requires only an internet connection. The endpoint accepts **either DNA contigs or protein sequences**; the right pipeline is chosen automatically based on sequence content.
 
 ```bash
-# 1. Get a protein FASTA file ready (your own, or download from NCBI/UniProt)
+# 1. Get a FASTA file ready - your own genome (DNA contigs) or protein
+#    sequences (e.g. from NCBI/UniProt). Both formats work.
 
 # 2. Submit it for reconstruction
 curl -X POST http://localhost:8000/api/jobs/reconstruct \
@@ -71,7 +72,7 @@ curl -X POST http://localhost:8000/api/jobs/reconstruct \
     -d @- <<EOF
 {
   "genome": "MyOrganism",
-  "genome_fasta": "$(cat my_proteins.fasta | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')",
+  "genome_fasta": "$(cat my_genome.fasta | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')",
   "template_type": "auto",
   "atp_safe": true,
   "gapfill": false,
@@ -80,7 +81,10 @@ curl -X POST http://localhost:8000/api/jobs/reconstruct \
 EOF
 # Returns a job id like "a1b2c3d4-..."
 
-# 3. Poll for completion (typically 30s-2min for a small genome)
+# 3. Poll for completion. DNA inputs take longer because the server runs
+#    gene calling first. Typical wall-clock:
+#      - protein FASTA (1-5k proteins):   30s-2min
+#      - DNA contigs    (a small genome): 1-5min
 JOB=<the id from step 2>
 curl "http://localhost:8000/api/jobs?ids=$JOB"
 
@@ -88,9 +92,7 @@ curl "http://localhost:8000/api/jobs?ids=$JOB"
 curl "http://localhost:8000/api/models/data?ref=/MyOrganism"
 ```
 
-Under the hood: the FASTA is sent to the public RAST kmer annotation service (`tutorial.theseed.org`, no auth needed), annotations come back in seconds, ModelSEEDpy builds the model using the gn/gp/ar templates, and the result lands at `/MyOrganism` in your local storage.
-
-> **Must be protein FASTA, not nucleotide.** RAST annotation runs on protein space (kmer matching against translated proteins). If you submit DNA or RNA, the request is rejected with a 422 explaining the issue. To go from genomic DNA to a model, translate to protein first (EMBOSS `transeq`, NCBI ORFfinder, or `prodigal -p meta -a proteins.faa -i genome.fna`).
+Under the hood: the FASTA is sent to the public RAST annotation service (`tutorial.theseed.org`, no auth needed). For DNA inputs, the service first runs gene calling (prodigal + glimmer3), then annotates the resulting proteins. For protein inputs, it skips gene calling. Either way the response is a fully annotated genome that ModelSEEDpy builds into a model using the gn/gp/ar templates; the result lands at `/MyOrganism` in your local storage.
 
 ## Using the MCP server for AI assistant integration
 

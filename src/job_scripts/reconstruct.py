@@ -201,26 +201,29 @@ def main():
             genome_id = rast_genome_id
 
         elif genome_fasta:
-            # FASTA path
-            update_job(job_file, {"progress": "Parsing FASTA..."})
-            from modelseedpy.core.msgenome import MSGenome, parse_fasta_str
+            # FASTA path: unified DNA+protein annotation via
+            # tutorial.theseed.org. Detection + pipeline selection live
+            # inside annotate_fasta; downstream is input-type-agnostic.
+            from modelseed_api.services.genome_annotator import annotate_fasta
             from modelseedpy.core.msbuilder import MSBuilder
 
-            ms_genome = MSGenome()
-            ms_genome.features += parse_fasta_str(genome_fasta)
-            if not ms_genome.features:
-                raise ValueError("No protein sequences found in genome_fasta")
-            print(f"Parsed {len(ms_genome.features)} protein sequences from FASTA")
+            update_job(job_file, {"progress": "Annotating genome..."})
+            ms_genome = annotate_fasta(genome_fasta, scientific_name=genome_id)
+            print(
+                f"Annotated FASTA -> {len(ms_genome.features)} features "
+                f"({sum(1 for f in ms_genome.features if f.ontology_terms.get('RAST'))} "
+                f"with assigned function)"
+            )
 
             organism_name = genome_id
             taxonomy = ""
             domain = ""
 
-            update_job(job_file, {"progress": "Annotating & building model..."})
+            update_job(job_file, {"progress": "Building model..."})
             model = MSBuilder.build_metabolic_model(
                 genome_id, ms_genome,
                 template=gs_template_obj,
-                annotate_with_rast=True,
+                annotate_with_rast=False,
                 gapfill_model=False,
             )
 

@@ -496,29 +496,33 @@ def reconstruct(
         genome_id = rast_genome_id
 
     elif genome_fasta:
-        # ── FASTA path: MSGenome + MSBuilder (no BV-BRC API) ──
-        self.update_state(state="PROGRESS", meta={"status": "Parsing FASTA..."})
-        from modelseedpy.core.msgenome import MSGenome, parse_fasta_str
+        # ── FASTA path: unified DNA+protein annotation via tutorial.theseed.org
+        # then MSBuilder. DNA/protein detection and RAST pipeline-stage
+        # selection happen inside annotate_fasta; the rest of the path is
+        # input-type-agnostic.
+        from modelseed_api.services.genome_annotator import annotate_fasta
         from modelseedpy.core.msbuilder import MSBuilder
 
-        ms_genome = MSGenome()
-        ms_genome.features += parse_fasta_str(genome_fasta)
-        if not ms_genome.features:
-            raise ValueError("No protein sequences found in genome_fasta")
-        logger.info("Parsed %d protein sequences from FASTA", len(ms_genome.features))
+        self.update_state(state="PROGRESS", meta={"status": "Annotating genome..."})
+        ms_genome = annotate_fasta(genome_fasta, scientific_name=genome_id)
+        logger.info(
+            "Annotated FASTA -> %d features (%d with assigned function)",
+            len(ms_genome.features),
+            sum(1 for f in ms_genome.features if f.ontology_terms.get("RAST")),
+        )
 
         organism_name = genome_id  # Use the genome field as display name
         taxonomy = ""
         domain = ""
 
-        # MSBuilder handles RAST annotation + model build in one step.
-        # template=None triggers auto-selection when template_type is "auto".
-        self.update_state(state="PROGRESS", meta={"status": "Annotating & building model..."})
+        # Annotation is already done; tell MSBuilder to skip its internal
+        # RAST call. template=None triggers auto-selection when "auto".
+        self.update_state(state="PROGRESS", meta={"status": "Building model..."})
         model = MSBuilder.build_metabolic_model(
             genome_id,
             ms_genome,
             template=gs_template_obj,  # None when auto, loaded template when explicit
-            annotate_with_rast=True,
+            annotate_with_rast=False,
             gapfill_model=False,  # We handle gapfill separately below
         )
 
