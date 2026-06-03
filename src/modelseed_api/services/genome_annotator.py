@@ -208,9 +208,26 @@ def annotate_fasta(
             "real genomic DNA, not a short fragment). For protein input, "
             "check that the FASTA actually contains protein sequences."
         )
+    n_features = len(ms_genome.features)
+    n_with_function = sum(1 for f in ms_genome.features if f.ontology_terms.get("RAST"))
     logger.info(
         "Annotation produced %d features (%d with assigned function)",
-        len(ms_genome.features),
-        sum(1 for f in ms_genome.features if f.ontology_terms.get("RAST")),
+        n_features,
+        n_with_function,
     )
+    # Zero functional roles -> downstream MSGenomeClassifier and MSBuilder
+    # both fail in confusing ways (auto template path crashes inside
+    # predict_phenotype.py:96 with a misleading "wasn't annotated with RAST"
+    # error; explicit template path silently builds a 0-gene model with
+    # just universal scaffold reactions). Catch this case here with a
+    # clean error instead.
+    if n_with_function == 0:
+        raise ValueError(
+            f"RAST annotation produced {n_features} feature(s) but none "
+            f"matched any functional roles. This usually means the input "
+            f"is too small for RAST to find characteristic kmers (try a "
+            f"larger genome), or the organism is too far from anything in "
+            f"RAST's reference set, or (for protein input) the sequences "
+            f"aren't functional proteins."
+        )
     return ms_genome

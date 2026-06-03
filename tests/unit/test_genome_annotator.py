@@ -157,3 +157,24 @@ class TestAnnotateFastaEdgeCases:
 
         with pytest.raises(ValueError, match="no features"):
             annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
+
+    def test_features_but_no_functions_raises_with_helpful_message(self, monkeypatch):
+        # Real edge case: gene calling succeeds but RAST kmer matching
+        # finds zero hits. Without this guard, downstream MSGenomeClassifier
+        # crashes with a misleading "wasn't annotated with RAST" error.
+        class NoFunctionsClient:
+            def __init__(self, url, timeout=600):
+                pass
+
+            def call(self, method, params):
+                return [{"features": [
+                    {"id": "g.peg.1", "protein_translation": "MKK"},
+                    {"id": "g.peg.2", "protein_translation": "QRS"},
+                ]}]
+
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.RPCClient", NoFunctionsClient,
+        )
+
+        with pytest.raises(ValueError, match="no.*functional roles"):
+            annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
