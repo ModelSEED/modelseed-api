@@ -35,6 +35,25 @@ class TestReconstructJob:
         }, headers=auth_headers)
         assert resp.status_code == 200
 
+    def test_rejects_dna_fasta_with_helpful_message(self, local_client, auth_headers):
+        resp = local_client.post("/api/jobs/reconstruct", json={
+            "genome": "custom",
+            "genome_fasta": ">contig1\nGATATGGGACGTAGCTGCTAGCATCGATCGATCGTAGCTAG",
+        }, headers=auth_headers)
+        assert resp.status_code == 422
+        body = resp.text.lower()
+        assert "nucleotide" in body or "dna" in body
+        assert "protein" in body
+
+    def test_accepts_protein_fasta_with_some_acgt_residues(self, local_client, auth_headers):
+        # Real proteins often contain runs of A/C/G/T amino acids; the
+        # nucleotide check must use the 90% threshold, not any-match.
+        resp = local_client.post("/api/jobs/reconstruct", json={
+            "genome": "custom",
+            "genome_fasta": ">prot\nMKKKACGTACGTPLQRSVWHEDFY",
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+
 
 class TestGapfillJob:
     def test_dispatch(self, local_client, auth_headers):

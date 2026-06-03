@@ -90,6 +90,8 @@ curl "http://localhost:8000/api/models/data?ref=/MyOrganism"
 
 Under the hood: the FASTA is sent to the public RAST kmer annotation service (`tutorial.theseed.org`, no auth needed), annotations come back in seconds, ModelSEEDpy builds the model using the gn/gp/ar templates, and the result lands at `/MyOrganism` in your local storage.
 
+> **Must be protein FASTA, not nucleotide.** RAST annotation runs on protein space (kmer matching against translated proteins). If you submit DNA or RNA, the request is rejected with a 422 explaining the issue. To go from genomic DNA to a model, translate to protein first (EMBOSS `transeq`, NCBI ORFfinder, or `prodigal -p meta -a proteins.faa -i genome.fna`).
+
 ## Using the MCP server for AI assistant integration
 
 The package also ships an MCP (Model Context Protocol) server for use with AI assistants like Claude Desktop or Claude Code. It runs locally only (no auth, no network) and exposes ModelSEED tools directly to the assistant.
