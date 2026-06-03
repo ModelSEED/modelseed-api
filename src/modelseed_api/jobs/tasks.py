@@ -150,11 +150,50 @@ def _init_kwargs(token: str) -> dict:
     )
 
 
+class ModelNotFoundError(RuntimeError):
+    """Raised when a workspace model the user asked to operate on is absent.
+
+    Translated from the underlying WorkspaceError('Object not found') which
+    propagates as an inscrutable '_ERROR_Object not found!_ERROR_' to users.
+    The message here is what celery surfaces to the UI as the failure reason.
+    """
+
+
+class GenomeNotFoundError(RuntimeError):
+    """Raised when a BV-BRC genome lookup returns a 5xx (typo'd ID, etc.).
+
+    BV-BRC returns 500 for nonexistent IDs rather than 404; without
+    translation the raw httpx HTTPError reaches the user.
+    """
+
+
 def _fetch_model_obj(ws, model_ref: str, token: str) -> dict:
-    """Fetch model JSON from workspace, handling Shock URLs."""
-    result = ws.get({"objects": [f"{model_ref}/model"]})
+    """Fetch model JSON from workspace, handling Shock URLs.
+
+    Raises ModelNotFoundError with a user-actionable message when the model
+    doesn't exist; this is the single biggest source of confusing 5xx-style
+    task failures on the live site (top hit: bioinfoc@bvbrc cycling gapfill/
+    FBA on /<user>/modelseed/<name>/model paths whose reconstruct never
+    completed or saved to that path).
+    """
+    from modelseed_api.services.workspace_service import WorkspaceError
+
+    try:
+        result = ws.get({"objects": [f"{model_ref}/model"]})
+    except WorkspaceError as exc:
+        if "Object not found" in str(exc):
+            raise ModelNotFoundError(
+                f"No model found at '{model_ref}/model'. Check that your "
+                f"reconstruct job completed successfully and saved a model "
+                f"to this path, or pass a different ref."
+            ) from exc
+        raise
     if not result:
-        raise ValueError(f"Model not found: {model_ref}")
+        raise ModelNotFoundError(
+            f"No model found at '{model_ref}/model'. Check that your "
+            f"reconstruct job completed successfully and saved a model "
+            f"to this path, or pass a different ref."
+        )
 
     raw_data = result[0][1] if len(result[0]) > 1 else "{}"
     if isinstance(raw_data, str):
@@ -544,7 +583,21 @@ def reconstruct(
         # Step 1: Fetch genome from BV-BRC API
         self.update_state(state="PROGRESS", meta={"status": "Fetching genome..."})
         bvbrc = BVBRCUtils(**kwargs)
-        kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
+        try:
+            kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
+        except Exception as exc:
+            # BV-BRC returns HTTPError 500 for nonexistent or malformed
+            # genome IDs (e.g. users typing RAST-style "6666666.x" IDs into
+            # the BV-BRC field). Translate to a clear failure message.
+            msg = str(exc)
+            if "HTTPError" in type(exc).__name__ or "500" in msg or "404" in msg:
+                raise GenomeNotFoundError(
+                    f"Genome '{genome_id}' could not be fetched from BV-BRC. "
+                    f"Check the genome ID is correct (BV-BRC format, e.g. "
+                    f"'83332.12'). If you meant a RAST job id, use the RAST "
+                    f"job submission flow instead."
+                ) from exc
+            raise
 
         # Extract organism/taxonomy info from genome
         organism_name = kbase_genome.get("scientific_name", "")

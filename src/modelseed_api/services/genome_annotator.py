@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 
 from modelseedpy.core.msgenome import MSFeature, MSGenome
 from modelseedpy.core.rpcclient import RPCClient
@@ -24,6 +25,15 @@ from modelseedpy.core.rpcclient import RPCClient
 logger = logging.getLogger(__name__)
 
 RAST_URL = "https://tutorial.theseed.org/services/genome_annotation"
+
+# tutorial.theseed.org returns transient 5xx (most commonly 504 Gateway
+# Timeout when the kmer service is under load). Same input that just 504'd
+# usually succeeds on retry within seconds. Retry transient upstream
+# failures so users don't see them as job failures. Non-transient errors
+# (4xx, schema errors, etc.) raise on the first attempt.
+_TRANSIENT_5XX = ("500", "502", "503", "504")
+_MAX_RETRIES = 3
+_BACKOFF_SECONDS = (5, 15)  # waits between attempts 1->2 and 2->3
 
 _PROTEIN_STAGES = [
     {"name": "annotate_proteins_kmer_v2", "kmer_v2_parameters": {}},
@@ -165,9 +175,29 @@ def annotate_fasta(
         stages = _PROTEIN_STAGES
 
     client = RPCClient(RAST_URL, timeout=timeout)
-    result = client.call(
-        "GenomeAnnotation.run_pipeline", [genome_dict, {"stages": stages}]
-    )
+    result = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            result = client.call(
+                "GenomeAnnotation.run_pipeline",
+                [genome_dict, {"stages": stages}],
+            )
+            break
+        except Exception as exc:
+            msg = str(exc)
+            is_transient = any(code in msg for code in _TRANSIENT_5XX)
+            if not is_transient or attempt == _MAX_RETRIES:
+                raise
+            wait = _BACKOFF_SECONDS[attempt - 1]
+            logger.warning(
+                "RAST annotation transient failure (attempt %d/%d): %s. "
+                "Retrying in %ds.",
+                attempt,
+                _MAX_RETRIES,
+                msg.splitlines()[0][:200],
+                wait,
+            )
+            time.sleep(wait)
     annotated = result[0]
 
     ms_genome = _build_msgenome(annotated)
