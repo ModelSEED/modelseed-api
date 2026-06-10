@@ -140,3 +140,123 @@ class ManageJobsRequest(BaseModel):
     action: str  # 'd' = delete, 'r' = rerun
     errors: Optional[dict[str, str]] = None
     reports: Optional[dict[str, str]] = None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bulk reconstruction (Phase 3)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class OntologyTerm(BaseModel):
+    """One ontology-term annotation with an evidence/probability score."""
+
+    term: str = Field(min_length=1, description="The term ID, e.g. 'K00001' for KO.")
+    score: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Evidence/probability in [0.0, 1.0]; defaults to 1.0.",
+    )
+
+
+class GenomeAnnotationPayload(BaseModel):
+    """One genome's annotations for a bulk-reconstruction batch.
+
+    Annotations are a nested mapping `{ontology_type: [OntologyTerm, ...]}`.
+    Recognized ontology types include SSO, EC, KO; others are accepted and
+    routed through whatever translator the worker has wired up.
+
+    A gene may carry multiple terms and multiple ontology types. Unmapped
+    genes (whose terms don't resolve to any model reaction) are retained
+    in the genes.csv output with a `disposition=unmapped` marker rather
+    than dropped silently.
+    """
+
+    genome_id: str = Field(
+        min_length=1,
+        description="Stable identifier for this genome; keys all outputs.",
+    )
+    annotations: dict[str, dict[str, list[OntologyTerm]]] = Field(
+        description=(
+            "Nested mapping: gene_id -> ontology_type -> list of OntologyTerm. "
+            "Empty annotations are accepted (the resulting model will be minimal)."
+        ),
+    )
+
+
+# Hard cap on batch size. Chris confirmed 100 (2026-06-09 chat). Enforced
+# via the Field max_length below; any batch over this returns 422 from
+# Pydantic without the request body ever reaching the dispatcher.
+_BULK_RECONSTRUCT_MAX = 100
+
+
+class BulkReconstructionRequest(BaseModel):
+    """Submit N genomes for template-based reconstruction in one call.
+
+    Output (per the PRD): for each input genome, a COBRApy JSON model
+    written to `output_path/model_<genome_id>.json`. Combined CSVs
+    `reactions.csv` and `genes.csv` (carrying a `genome_id` column) are
+    written once at `output_path/`. See docs/BULK_RECONSTRUCT.md.
+
+    Defaults mirror what Chris asked for: gapfill OFF (caller opts in)
+    so the default batch is pure reconstruction; FVA ON because the
+    KBase reactions-table columns require it. Both can be flipped per
+    call.
+    """
+
+    genomes: list[GenomeAnnotationPayload] = Field(
+        min_length=1,
+        max_length=_BULK_RECONSTRUCT_MAX,
+        description=(
+            "List of genomes to reconstruct. Cap of "
+            f"{_BULK_RECONSTRUCT_MAX} per request, enforced server-side."
+        ),
+    )
+
+    template_type: _TEMPLATE_TYPE = Field(
+        default="auto",
+        description="Reconstruction template; 'auto' invokes the classifier per genome.",
+    )
+    atp_safe: bool = Field(default=True, description="Run the ATP correction step.")
+
+    gapfill: bool = Field(
+        default=False,
+        description=(
+            "When true, run MSGapfill per genome after build. Adds 2-5s/genome. "
+            "Caller must supply gapfill_media."
+        ),
+    )
+    gapfill_media: Optional[str] = Field(
+        default=None,
+        description=(
+            "Workspace media reference or built-in media name. Required when "
+            "gapfill=true."
+        ),
+    )
+
+    fva: bool = Field(
+        default=True,
+        description=(
+            "When true, run FVA on rich and minimal media per genome to fill "
+            "the rich_media_* and minimal_media_* columns in reactions.csv / "
+            "genes.csv. Adds ~30s-2min per genome (model-size dependent). When "
+            "false, those columns are emitted empty (not null)."
+        ),
+    )
+
+    output_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Workspace path for outputs. Defaults to "
+            "'/<user>/modelseed/bulk_<job_id>/' (worker fills in)."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _gapfill_requires_media(self) -> "BulkReconstructionRequest":
+        if self.gapfill and not self.gapfill_media:
+            raise ValueError(
+                "gapfill_media is required when gapfill=true "
+                "(workspace path or built-in media name)"
+            )
+        return self

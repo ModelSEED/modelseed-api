@@ -13,6 +13,7 @@ from modelseed_api.jobs.dispatcher import JobDispatcher
 from modelseed_api.jobs.store import JobStore
 from modelseed_api.schemas.errors import StructuredValidationError
 from modelseed_api.schemas.jobs import (
+    BulkReconstructionRequest,
     FBARequest,
     GapfillRequest,
     ManageJobsRequest,
@@ -188,6 +189,46 @@ async def run_fba(
     job_id = _dispatcher.dispatch(
         app="FluxBalanceAnalysis",
         parameters={"model": request.model, "media": request.media},
+        user=user.username,
+        token=user.token,
+    )
+    return job_id
+
+
+@router.post("/bulk_reconstruct")
+async def bulk_reconstruct_model(
+    request: BulkReconstructionRequest,
+    user: AuthUser = Depends(get_current_user),
+    skip_validation: bool = Query(default=False),
+) -> str:
+    """Dispatch a bulk-reconstruction job.
+
+    Submit N genomes (max 100) with probabilistic ontology annotations.
+    The worker builds one COBRApy model per genome plus combined
+    reactions.csv and genes.csv at the output path. See
+    docs/BULK_RECONSTRUCT.md for the full contract.
+
+    Pre-flight: validates gapfill_media exists in workspace (when
+    gapfill=true with a workspace media ref). Per-genome validation
+    happens inside the worker loop; one bad genome surfaces as a
+    failed entry in result.per_genome without aborting the batch.
+    """
+    if not skip_validation:
+        if request.gapfill and request.gapfill_media:
+            _run_preflight(validate_media_exists, request.gapfill_media, user.token)
+
+    params = {
+        "genomes": [g.model_dump() for g in request.genomes],
+        "template_type": request.template_type,
+        "atp_safe": request.atp_safe,
+        "gapfill": request.gapfill,
+        "gapfill_media": request.gapfill_media,
+        "fva": request.fva,
+        "output_path": request.output_path,
+    }
+    job_id = _dispatcher.dispatch(
+        app="BulkModelReconstruction",
+        parameters=params,
         user=user.username,
         token=user.token,
     )

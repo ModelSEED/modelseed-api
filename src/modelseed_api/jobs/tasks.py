@@ -1154,3 +1154,305 @@ def run_fba(
         "status_fba": solution.status,
         "nonzero_fluxes": len(fluxes),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bulk reconstruction (Phase 3)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _reconstruct_one_genome(
+    *,
+    genome_id: str,
+    annotations: dict,
+    template_type: str,
+    atp_safe: bool,
+    do_gapfill: bool,
+    gapfill_media: str | None,
+    do_fva: bool,
+    kwargs: dict,
+    data_dir: str,
+    translator,
+):
+    """Build (and optionally gapfill + FVA) one model from PRD-shape annotations.
+
+    Returns (mdlutl, summary_dict, fva_rich_map, fva_min_map, unmapped_gene_ids).
+    Raises on per-genome failure; the caller wraps each call in try/except so
+    one bad input doesn't abort the rest of the batch.
+    """
+    from kbutillib import MSReconstructionUtils
+    from modelseedpy.core.annotationontology import AnnotationOntology
+    from modelseedpy.core.msbuilder import MSBuilder
+
+    # 1. Build AnnotationOntology from PRD payload + run upstream translation
+    anno_ont = AnnotationOntology.from_prd_input(
+        genome_id=genome_id,
+        annotations=annotations,
+        data_dir=data_dir,
+        translator=translator,
+    )
+    incoming_gene_ids = set(annotations.keys())
+
+    # 2. Build the model from the annotation ontology using MSBuilder. The
+    #    fix-merged msbuilder.py:789 path now finds features correctly.
+    msgenome = anno_ont.get_msgenome(merge_all=True)
+    msgenome.annoont = anno_ont
+
+    # 3. Pick template. "auto" runs the classifier; otherwise load the named one.
+    if template_type == "auto":
+        class_name, resolved_type = _classify_genome(msgenome)
+    else:
+        resolved_type = template_type
+        class_name = None
+    gs_template_obj = _load_template(resolved_type)
+    core_template = _load_template("core")
+
+    # 4. Compute reactions-to-add from the annotation ontology, then build.
+    recon = MSReconstructionUtils(**kwargs)
+    reactions_to_add = recon.compute_ontology_model_changes(
+        anno_ont=anno_ont,
+        annotation_priority=["PRD"],
+    )
+    output, mdlutl = recon.build_metabolic_model(
+        genome=msgenome,
+        genome_classifier=None,
+        core_template=core_template,
+        gs_template_obj=gs_template_obj,
+        gs_template=resolved_type,
+        atp_safe=atp_safe,
+        reactions_to_add=reactions_to_add,
+    )
+    if class_name:
+        output["Class"] = class_name
+
+    # 5. Optional gapfill.
+    gapfill_count = 0
+    if do_gapfill:
+        ms_media = _load_media(gapfill_media, kwargs.get("token", ""))
+        gf_output, _solutions, _osol, _osol_media = recon.gapfill_metabolic_model(
+            mdlutl=mdlutl,
+            genome=msgenome,
+            media_objs=[ms_media],
+            templates=[gs_template_obj],
+            core_template=core_template,
+            atp_safe=atp_safe,
+        )
+        gapfill_count = gf_output.get("GS GF") or 0
+
+    # 6. Optional FVA (rich + minimal media). Skipped silently when disabled
+    #    or when the model has no objective (FVA needs one to run sensibly).
+    from modelseed_api.services.bulk_export import compute_fva_classes
+    fva_rich: dict = {}
+    fva_min: dict = {}
+    if do_fva:
+        # Configure model objective for FVA; both runs use the same model
+        # but with different media bounds applied (handled by media-pkg).
+        try:
+            mdlutl.model.objective = "bio1"
+        except Exception:
+            pass
+        try:
+            fva_rich = compute_fva_classes(mdlutl.model, media_or_setup="rich")
+            fva_min = compute_fva_classes(mdlutl.model, media_or_setup="minimal")
+        except Exception as exc:
+            logger.warning("FVA failed for %s, leaving columns empty: %s", genome_id, exc)
+
+    # 7. Identify unmapped genes (in PRD payload but didn't land on any reaction).
+    mapped_gene_ids = {g.id for g in mdlutl.model.genes}
+    unmapped_gene_ids = sorted(incoming_gene_ids - mapped_gene_ids)
+
+    summary = {
+        "status": "success",
+        "genome_id": genome_id,
+        "reactions": len(mdlutl.model.reactions),
+        "metabolites": len(mdlutl.model.metabolites),
+        "genes": len(mdlutl.model.genes),
+        "unmapped_genes": len(unmapped_gene_ids),
+        "classification": output.get("Class", resolved_type),
+        "gapfilled": do_gapfill,
+        "gapfill_solutions": gapfill_count,
+        "fva": do_fva,
+    }
+    return mdlutl, summary, fva_rich, fva_min, unmapped_gene_ids
+
+
+def _run_bulk_reconstruct(
+    token: str,
+    genomes: list,
+    template_type: str = "auto",
+    atp_safe: bool = True,
+    gapfill: bool = False,
+    gapfill_media: str | None = None,
+    fva: bool = True,
+    output_path: str | None = None,
+    job_id: str = "manual",
+    progress_cb=None,
+) -> dict:
+    """Body of the bulk-reconstruct workflow. Reusable from both the
+    Celery task and the subprocess job-script entry points; uses a
+    `progress_cb(str)` callback so the Celery wrapper can mirror status
+    updates without requiring the subprocess path to fake a Celery context.
+    """
+    import cobra.io
+    from kbutillib import KBAnnotationUtils
+    from modelseed_api.services.bulk_export import (
+        build_genes_rows,
+        build_reactions_rows,
+        write_combined_csvs,
+    )
+    from modelseed_api.services.storage_factory import get_storage_service
+
+    def _progress(msg: str) -> None:
+        if progress_cb:
+            try:
+                progress_cb(msg)
+            except Exception:
+                pass
+        logger.info(msg)
+
+    if not genomes:
+        raise ValueError("genomes list is empty")
+
+    # Derive default output path from username + job_id.
+    if not output_path:
+        username = ""
+        for part in token.split("|"):
+            if part.startswith("un="):
+                username = part[3:]
+                break
+        if not username:
+            raise ValueError(
+                "Could not derive username from token; pass output_path explicitly"
+            )
+        output_path = f"/{username}/modelseed/bulk_{job_id}"
+
+    # Shared setup.
+    kwargs = _init_kwargs(token)
+    kbann = KBAnnotationUtils(**kwargs)
+    translator = kbann.translate_term_to_modelseed
+    data_dir = str(kbann.annoontology_dir / "data")
+
+    ws = get_storage_service(token)
+    _progress(f"Preparing batch of {len(genomes)} genome(s)...")
+
+    all_rxn_rows: list = []
+    all_gene_rows: list = []
+    per_genome_results: dict = {}
+    succeeded = 0
+    failed = 0
+
+    for idx, item in enumerate(genomes, start=1):
+        gid = item.get("genome_id") or item.get("id") or f"genome_{idx}"
+        annotations = item.get("annotations") or {}
+        _progress(f"[{idx}/{len(genomes)}] reconstructing {gid}...")
+        try:
+            mdlutl, summary, fva_rich, fva_min, unmapped = _reconstruct_one_genome(
+                genome_id=gid,
+                annotations=annotations,
+                template_type=template_type,
+                atp_safe=atp_safe,
+                do_gapfill=gapfill,
+                gapfill_media=gapfill_media,
+                do_fva=fva,
+                kwargs=kwargs,
+                data_dir=data_dir,
+                translator=translator,
+            )
+            all_rxn_rows.extend(
+                build_reactions_rows(mdlutl.model, gid, fva_rich, fva_min)
+            )
+            all_gene_rows.extend(
+                build_genes_rows(mdlutl.model, gid, fva_rich, fva_min, unmapped)
+            )
+
+            try:
+                cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
+                ws.create({
+                    "objects": [
+                        [f"{output_path}/model_{gid}.json", "string", {}, cobra_json],
+                    ],
+                    "overwrite": 1,
+                })
+            except Exception as exc:
+                logger.exception("Failed to save model JSON for %s: %s", gid, exc)
+                summary["save_warning"] = str(exc)
+
+            per_genome_results[gid] = summary
+            succeeded += 1
+        except Exception as exc:
+            logger.exception("bulk_reconstruct failed for genome %s: %s", gid, exc)
+            per_genome_results[gid] = {
+                "status": "failed",
+                "genome_id": gid,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            failed += 1
+
+    _progress("Writing combined CSVs...")
+    import tempfile
+    with tempfile.TemporaryDirectory() as tdir:
+        rxn_path, gene_path = write_combined_csvs(all_rxn_rows, all_gene_rows, tdir)
+        rxn_text = rxn_path.read_text()
+        gene_text = gene_path.read_text()
+    try:
+        ws.create({
+            "objects": [
+                [output_path, "folder",
+                 {"job_id": job_id, "kind": "bulk_reconstruct"}, ""],
+                [f"{output_path}/reactions.csv", "string",
+                 {"rows": str(len(all_rxn_rows))}, rxn_text],
+                [f"{output_path}/genes.csv", "string",
+                 {"rows": str(len(all_gene_rows))}, gene_text],
+            ],
+            "overwrite": 1,
+        })
+    except Exception as exc:
+        logger.exception("Failed to write combined CSVs to workspace: %s", exc)
+
+    return {
+        "status": "success" if failed == 0 else "partial",
+        "total": len(genomes),
+        "succeeded": succeeded,
+        "failed": failed,
+        "output_path": output_path,
+        "per_genome": per_genome_results,
+        "reactions_rows": len(all_rxn_rows),
+        "genes_rows": len(all_gene_rows),
+    }
+
+
+@app.task(bind=True, name="modelseed.bulk_reconstruct")
+def bulk_reconstruct(
+    self,
+    token: str,
+    genomes: list,
+    template_type: str = "auto",
+    atp_safe: bool = True,
+    gapfill: bool = False,
+    gapfill_media: str | None = None,
+    fva: bool = True,
+    output_path: str | None = None,
+):
+    """Celery wrapper around the bulk-reconstruct workflow.
+
+    See docs/BULK_RECONSTRUCT.md for the request shape, output layout,
+    and expected timings. The workflow itself lives in
+    `_run_bulk_reconstruct` so the subprocess job script can reuse it.
+    """
+    job_id = getattr(self.request, "id", "") or "manual"
+
+    def _cb(msg: str) -> None:
+        self.update_state(state="PROGRESS", meta={"status": msg})
+
+    return _run_bulk_reconstruct(
+        token=token,
+        genomes=genomes,
+        template_type=template_type,
+        atp_safe=atp_safe,
+        gapfill=gapfill,
+        gapfill_media=gapfill_media,
+        fva=fva,
+        output_path=output_path,
+        job_id=job_id,
+        progress_cb=_cb,
+    )
