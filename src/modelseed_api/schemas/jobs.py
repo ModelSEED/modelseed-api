@@ -5,9 +5,35 @@ Matches the Task type from ProbModelSEED.spec.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+
+# Valid template_type values. Mirrors TEMPLATE_FILES in jobs/tasks.py
+# (must stay in sync). "auto" triggers the genome classifier instead of
+# loading a specific template.
+_TEMPLATE_TYPE = Literal[
+    "auto",
+    "core",
+    "gn",
+    "gp",
+    "grampos",
+    "gramneg",
+    "ar",
+    "archaea",
+]
+# The same set without "auto", for endpoints (gapfill, fba) that need a
+# concrete template upfront.
+_TEMPLATE_TYPE_CONCRETE = Literal[
+    "core",
+    "gn",
+    "gp",
+    "grampos",
+    "gramneg",
+    "ar",
+    "archaea",
+]
 
 
 class Task(BaseModel):
@@ -55,7 +81,7 @@ class ReconstructionRequest(BaseModel):
     genome_fasta: Optional[str] = None
     rast_job_id: Optional[str] = Field(default=None, min_length=1)
     rast_genome_id: Optional[str] = Field(default=None, min_length=1)
-    template_type: str = "auto"
+    template_type: _TEMPLATE_TYPE = "auto"
     atp_safe: bool = True
     gapfill: bool = False
     media: Optional[str] = None
@@ -88,7 +114,7 @@ class GapfillRequest(BaseModel):
     """Request to gapfill a model."""
 
     model: str = Field(min_length=1)  # workspace reference to model
-    template_type: str = "gn"
+    template_type: _TEMPLATE_TYPE_CONCRETE = "gn"
     media: Optional[str] = None  # media workspace reference
 
 

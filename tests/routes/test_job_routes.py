@@ -19,69 +19,91 @@ class TestCheckJobs:
 
 
 class TestReconstructJob:
+    # These tests exercise dispatch behavior, not preflight. Preflight gets
+    # its own coverage in tests/unit/test_preflight.py + tests/live/. Pass
+    # skip_validation=true to keep the focus on the dispatcher.
     def test_dispatch_returns_job_id(self, local_client, auth_headers):
-        resp = local_client.post("/api/jobs/reconstruct", json={
-            "genome": "83333.1",
-        }, headers=auth_headers)
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "83333.1"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         job_id = resp.json()
         assert isinstance(job_id, str)
         assert len(job_id) > 0
 
     def test_with_protein_fasta(self, local_client, auth_headers):
-        resp = local_client.post("/api/jobs/reconstruct", json={
-            "genome": "custom",
-            "genome_fasta": ">prot\nMKKK",
-        }, headers=auth_headers)
+        # FASTA path doesn't trigger genome preflight, but skip_validation
+        # is still safe to pass (no-op).
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "custom", "genome_fasta": ">prot\nMKKK"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
 
     def test_with_dna_fasta(self, local_client, auth_headers):
         # DNA input is now first-class: schema accepts it, the task layer
         # routes it through the contig (gene calling + annotation) pipeline.
-        resp = local_client.post("/api/jobs/reconstruct", json={
-            "genome": "custom",
-            "genome_fasta": ">contig1\nGATATGGGACGTAGCTGCTAGCATCGATCGATCGTAGCTAG",
-        }, headers=auth_headers)
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={
+                "genome": "custom",
+                "genome_fasta": ">contig1\nGATATGGGACGTAGCTGCTAGCATCGATCGATCGTAGCTAG",
+            },
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
 
 
 class TestGapfillJob:
     def test_dispatch(self, local_client, auth_headers):
-        resp = local_client.post("/api/jobs/gapfill", json={
-            "model": "/local/modelseed/TestModel",
-        }, headers=auth_headers)
+        resp = local_client.post(
+            "/api/jobs/gapfill?skip_validation=true",
+            json={"model": "/local/modelseed/TestModel"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         assert isinstance(resp.json(), str)
 
 
 class TestFBAJob:
     def test_dispatch(self, local_client, auth_headers):
-        resp = local_client.post("/api/jobs/fba", json={
-            "model": "/local/modelseed/TestModel",
-        }, headers=auth_headers)
+        resp = local_client.post(
+            "/api/jobs/fba?skip_validation=true",
+            json={"model": "/local/modelseed/TestModel"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         assert isinstance(resp.json(), str)
 
 
 class TestMergeJob:
     def test_dispatch(self, local_client, auth_headers):
-        resp = local_client.post("/api/jobs/merge", json={
-            "models": [
-                ["/local/modelseed/a", 0.5],
-                ["/local/modelseed/b", 0.5],
-            ],
-            "output_file": "merged",
-            "output_path": "/local/modelseed/merged",
-        }, headers=auth_headers)
+        resp = local_client.post(
+            "/api/jobs/merge?skip_validation=true",
+            json={
+                "models": [
+                    ["/local/modelseed/a", 0.5],
+                    ["/local/modelseed/b", 0.5],
+                ],
+                "output_file": "merged",
+                "output_path": "/local/modelseed/merged",
+            },
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
 
 
 class TestManageJobs:
     def test_delete_action(self, local_client, auth_headers):
-        # First create a job
-        resp = local_client.post("/api/jobs/reconstruct", json={
-            "genome": "83333.1",
-        }, headers=auth_headers)
+        # First create a job (skip_validation to avoid preflight)
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "83333.1"},
+            headers=auth_headers,
+        )
         job_id = resp.json()
 
         # Delete it
