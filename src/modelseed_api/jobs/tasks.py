@@ -160,11 +160,52 @@ class ModelNotFoundError(RuntimeError):
 
 
 class GenomeNotFoundError(RuntimeError):
-    """Raised when a BV-BRC genome lookup returns a 5xx (typo'd ID, etc.).
+    """Raised when a BV-BRC genome lookup fails to find the requested ID.
 
-    BV-BRC returns 500 for nonexistent IDs rather than 404; without
-    translation the raw httpx HTTPError reaches the user.
+    The upstream failure shape varies: BVBRCUtils raises
+    ``ValueError("No genome found with ID ...")`` for some IDs, and the
+    BV-BRC API returns HTTP 500 (sometimes 404) for others. Both shapes
+    funnel through ``_fetch_bvbrc_genome`` and become this exception with
+    a user-actionable message.
     """
+
+
+_BVBRC_NOT_FOUND_MARKERS: tuple[str, ...] = (
+    "No genome found with ID",  # BVBRCUtils ValueError for unknown ID
+    " 500 ",                    # HTTPError 5xx codes (with spaces to avoid
+    " 404 ",                    # matching unrelated digits)
+    "Internal Server Error",
+    "Not Found",
+)
+
+
+def _fetch_bvbrc_genome(bvbrc, genome_id: str) -> dict:
+    """Fetch a KBase-format genome dict from BV-BRC.
+
+    Translates the several shapes of not-found error that BV-BRC and
+    KBUtilLib can surface into a single :class:`GenomeNotFoundError` with
+    a message that tells the user what to do (check the ID, or use the
+    RAST job flow).
+
+    Pulled out of ``reconstruct`` so the translation can be unit-tested
+    without dragging in the rest of the build pipeline.
+    """
+    try:
+        return bvbrc.build_kbase_genome_from_api(genome_id)
+    except Exception as exc:
+        msg = str(exc)
+        looks_like_not_found = (
+            "HTTPError" in type(exc).__name__
+            or any(marker in msg for marker in _BVBRC_NOT_FOUND_MARKERS)
+        )
+        if looks_like_not_found:
+            raise GenomeNotFoundError(
+                f"Genome '{genome_id}' could not be fetched from BV-BRC. "
+                f"Check the genome ID is correct (BV-BRC format, e.g. "
+                f"'83332.12'). If you meant a RAST job id, use the RAST "
+                f"job submission flow instead."
+            ) from exc
+        raise
 
 
 def _fetch_model_obj(ws, model_ref: str, token: str) -> dict:
@@ -583,21 +624,7 @@ def reconstruct(
         # Step 1: Fetch genome from BV-BRC API
         self.update_state(state="PROGRESS", meta={"status": "Fetching genome..."})
         bvbrc = BVBRCUtils(**kwargs)
-        try:
-            kbase_genome = bvbrc.build_kbase_genome_from_api(genome_id)
-        except Exception as exc:
-            # BV-BRC returns HTTPError 500 for nonexistent or malformed
-            # genome IDs (e.g. users typing RAST-style "6666666.x" IDs into
-            # the BV-BRC field). Translate to a clear failure message.
-            msg = str(exc)
-            if "HTTPError" in type(exc).__name__ or "500" in msg or "404" in msg:
-                raise GenomeNotFoundError(
-                    f"Genome '{genome_id}' could not be fetched from BV-BRC. "
-                    f"Check the genome ID is correct (BV-BRC format, e.g. "
-                    f"'83332.12'). If you meant a RAST job id, use the RAST "
-                    f"job submission flow instead."
-                ) from exc
-            raise
+        kbase_genome = _fetch_bvbrc_genome(bvbrc, genome_id)
 
         # Extract organism/taxonomy info from genome
         organism_name = kbase_genome.get("scientific_name", "")
