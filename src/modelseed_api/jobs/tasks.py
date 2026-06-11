@@ -341,14 +341,23 @@ def _load_media(media_ref: str, token: str):
 def _resolve_media_ref(media_ref: str) -> str | None:
     """Resolve media reference to a workspace path.
 
-    Returns None for 'Complete' or empty (all exchanges open).
+    Returns None for 'Complete', empty, or ANY path ending in '/Complete'
+    (case-insensitive). 'Complete' means all exchanges open; there's no
+    workspace object to load. The path-ending check exists because the
+    frontend defaults to the canonical public path
+    `/chenry/public/modelsupport/media/Complete`; loading that path
+    fails (the workspace object has no parseable compound list) so we
+    treat it identically to the bare keyword.
+
     Bare names (no '/') are resolved under the public media folder.
     """
     if not media_ref or media_ref.lower() == "complete":
         return None
+    if media_ref.rstrip("/").lower().endswith("/complete"):
+        return None
     if "/" in media_ref:
         return media_ref  # Already a workspace path
-    # Bare name → look under public media folder
+    # Bare name. Look under public media folder.
     from modelseed_api.config import settings
     return f"{settings.public_media_path}/{media_ref}"
 
