@@ -57,6 +57,36 @@ class TestReconstructJob:
         assert resp.status_code == 200
 
 
+    def test_invalid_genome_fasta_no_sequence_returns_422(self, local_client, auth_headers):
+        # Headers-only FASTA (no sequence data) must be rejected at request
+        # time with a 422, not bubble up as a Celery task failure.
+        resp = local_client.post(
+            "/api/jobs/reconstruct",
+            json={"genome": "custom", "genome_fasta": ">contig1\n>contig2\n"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "FASTA" in resp.text
+
+    def test_genome_fasta_as_path_returns_422(self, local_client, auth_headers):
+        # A workspace path passed as genome_fasta content should be rejected.
+        resp = local_client.post(
+            "/api/jobs/reconstruct",
+            json={"genome": "custom", "genome_fasta": "/username/data/genome.fasta"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "FASTA" in resp.text
+
+    def test_whitespace_only_genome_fasta_returns_422(self, local_client, auth_headers):
+        resp = local_client.post(
+            "/api/jobs/reconstruct",
+            json={"genome": "custom", "genome_fasta": "   \n   \n"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+
+
 class TestGapfillJob:
     def test_dispatch(self, local_client, auth_headers):
         resp = local_client.post(
