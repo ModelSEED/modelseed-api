@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # Valid template_type values. Mirrors TEMPLATE_FILES in jobs/tasks.py
@@ -86,6 +86,29 @@ class ReconstructionRequest(BaseModel):
     gapfill: bool = False
     media: Optional[str] = None
     output_path: Optional[str] = None
+
+    @field_validator("genome_fasta")
+    @classmethod
+    def _validate_genome_fasta_content(cls, v):
+        if v is None:
+            return v
+        has_seq = False
+        in_record = False
+        for line in v.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(">"):
+                in_record = True
+            elif stripped and in_record:
+                has_seq = True
+                break
+        if not has_seq:
+            raise ValueError(
+                "genome_fasta must contain at least one FASTA record "
+                "(a >header line followed by sequence data); got no valid "
+                "records. Pass actual FASTA content, not a file path or "
+                "workspace reference."
+            )
+        return v
 
     @model_validator(mode="after")
     def _validate_input_modes(self) -> "ReconstructionRequest":
