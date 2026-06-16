@@ -72,6 +72,18 @@ def _merge_ws_metadata(ws, obj_path: str, new_meta: dict):
     ws.update_metadata({"objects": [[obj_path, merged]]})
 
 
+def _ensure_ws_folder(ws, path: str) -> None:
+    """Create workspace folder at path if it does not exist (idempotent).
+
+    PATRIC workspace returns Insufficient permissions instead of Not Found
+    when creating inside a missing intermediate directory. This is the root
+    cause for first-time users who have no /username/modelseed folder yet.
+    """
+    if not path or path.rstrip("/") in ("", "/"):
+        return
+    ws.create({"objects": [[path.rstrip("/"), "folder", {}, ""]], "overwrite": 1})
+
+
 def _load_template(template_type: str):
     """Load a template from local JSON file using MSTemplateBuilder."""
     from modelseedpy import MSTemplateBuilder
@@ -768,6 +780,7 @@ def reconstruct(
             "fba_count": "0",
         }
 
+        _ensure_ws_folder(ws, output_path.rsplit("/", 1)[0])
         ws.create({
             "objects": [
                 [output_path, "modelfolder", folder_meta, ""],
@@ -1342,6 +1355,8 @@ def _run_bulk_reconstruct(
     data_dir = str(kbann.annoontology_dir / "data")
 
     ws = get_storage_service(token)
+    _ensure_ws_folder(ws, output_path.rsplit("/", 1)[0])
+    _ensure_ws_folder(ws, output_path)
     _progress(f"Preparing batch of {len(genomes)} genome(s)...")
 
     all_rxn_rows: list = []
