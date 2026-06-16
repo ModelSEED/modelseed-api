@@ -31,6 +31,7 @@ from modelseed_api.schemas.errors import (
     err_genome_not_found,
     err_media_not_found,
     err_model_not_found,
+    err_output_path_not_owned,
     err_token_expired,
 )
 
@@ -137,6 +138,38 @@ def validate_token(token: str) -> None:
 # ─────────────────────────────────────────────────────────────────────
 # BV-BRC-backed checks: genome
 # ─────────────────────────────────────────────────────────────────────
+
+
+def validate_output_path_under_user(output_path: str | None, username: str) -> None:
+    """Reject requests whose `output_path` is not under the caller's namespace.
+
+    Workspace `create` calls on paths the user does not own come back as
+    `WorkspaceError("Insufficient permissions to create ...")` 30 seconds
+    into a queued job, after the worker has fetched the genome and built
+    the model. That's a poor user experience even when the failure is
+    technically the caller's fault. Catching it at submit time turns a
+    "queued -> in-progress -> failed badge with no detail" sequence into a
+    synchronous 403 with a clear hint.
+
+    Specifically catches the bug we see in the wild: the frontend strips
+    the `@bvbrc` (or `@patricbrc.org`) suffix from the username when
+    constructing the path, so a user with workspace
+    `/jose@bvbrc/modelseed/` ends up submitting `/jose/modelseed/`, which
+    they do not own. The hint in OUTPUT_PATH_NOT_OWNED calls out the
+    suffix gotcha explicitly.
+
+    Empty `output_path` passes through unchanged: the worker fills in a
+    sensible default from the token's `un=` value, which always has the
+    correct suffix.
+    """
+    if not output_path:
+        return
+    expected_prefix = f"/{username}/"
+    if output_path == f"/{username}" or output_path.startswith(expected_prefix):
+        return
+    raise StructuredValidationError(
+        403, err_output_path_not_owned(output_path, expected_prefix)
+    )
 
 
 def validate_genome_exists(genome_id: str, token: str) -> None:

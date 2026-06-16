@@ -222,3 +222,59 @@ def test_validate_genome_exists_transient_error_is_skipped_not_failed(monkeypatc
     _patch_bvbrc(monkeypatch, raise_transient)
     # Should NOT raise.
     preflight.validate_genome_exists("83332.12", "tok")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# validate_output_path_under_user
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_validate_output_path_under_user_empty_passes_through():
+    # Empty/None means "let the worker pick a default". Always allowed.
+    preflight.validate_output_path_under_user(None, "alice@bvbrc")
+    preflight.validate_output_path_under_user("", "alice@bvbrc")
+
+
+def test_validate_output_path_under_user_happy_path():
+    # Path is under the user's namespace -> OK.
+    preflight.validate_output_path_under_user(
+        "/alice@bvbrc/modelseed/MyModel", "alice@bvbrc"
+    )
+    preflight.validate_output_path_under_user(
+        "/alice@patricbrc.org/some/deep/path", "alice@patricbrc.org"
+    )
+
+
+def test_validate_output_path_under_user_exact_namespace_root_allowed():
+    # Edge case: /alice@bvbrc (no trailing slash) is the user's own root.
+    preflight.validate_output_path_under_user("/alice@bvbrc", "alice@bvbrc")
+
+
+def test_validate_output_path_under_user_namespace_mismatch_403s():
+    # The compchemist726 bug shape: frontend stripped the @bvbrc suffix.
+    with pytest.raises(StructuredValidationError) as exc_info:
+        preflight.validate_output_path_under_user(
+            "/compchemist726/modelseed", "compchemist726@bvbrc"
+        )
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.error.code == "OUTPUT_PATH_NOT_OWNED"
+    assert "/compchemist726/modelseed" in exc_info.value.error.message
+    assert "/compchemist726@bvbrc/" in exc_info.value.error.message
+    assert exc_info.value.error.field == "output_path"
+    # Hint must mention the suffix gotcha that's the actual cause.
+    assert "@bvbrc" in (exc_info.value.error.hint or "")
+
+
+def test_validate_output_path_under_user_someone_elses_namespace_403s():
+    with pytest.raises(StructuredValidationError) as exc_info:
+        preflight.validate_output_path_under_user(
+            "/eve/private", "alice@bvbrc"
+        )
+    assert exc_info.value.error.code == "OUTPUT_PATH_NOT_OWNED"
+
+
+def test_validate_output_path_under_user_prefix_overlap_is_not_a_match():
+    # /alice2/... must not pass for user 'alice'. Trailing-slash check
+    # in the validator prevents this prefix collision.
+    with pytest.raises(StructuredValidationError):
+        preflight.validate_output_path_under_user("/alice2/x", "alice")

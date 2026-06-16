@@ -24,6 +24,7 @@ from modelseed_api.services.preflight import (
     validate_genome_exists,
     validate_media_exists,
     validate_model_exists,
+    validate_output_path_under_user,
 )
 
 router = APIRouter()
@@ -110,6 +111,7 @@ async def reconstruct_model(
     Returns the job ID.
     """
     if not skip_validation:
+        _run_preflight(validate_output_path_under_user, request.output_path, user.username)
         if not request.genome_fasta and not request.rast_job_id:
             _run_preflight(validate_genome_exists, request.genome, user.token)
         if request.gapfill and request.media:
@@ -214,6 +216,7 @@ async def bulk_reconstruct_model(
     failed entry in result.per_genome without aborting the batch.
     """
     if not skip_validation:
+        _run_preflight(validate_output_path_under_user, request.output_path, user.username)
         if request.gapfill and request.gapfill_media:
             _run_preflight(validate_media_exists, request.gapfill_media, user.token)
 
@@ -248,6 +251,7 @@ async def merge_models(
     Returns the job ID.
     """
     if not skip_validation:
+        _run_preflight(validate_output_path_under_user, request.output_path, user.username)
         for model_ref, _abundance in request.models:
             _run_preflight(validate_model_exists, model_ref, user.token)
 

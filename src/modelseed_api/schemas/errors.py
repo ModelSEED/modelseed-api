@@ -158,3 +158,21 @@ def err_rast_job_genome_id_required() -> StructuredError:
         ),
         field="rast_genome_id",
     )
+
+
+def err_output_path_not_owned(output_path: str, namespace: str) -> StructuredError:
+    return StructuredError(
+        code="OUTPUT_PATH_NOT_OWNED",
+        message=(
+            f"Output path '{output_path}' is not under your workspace namespace "
+            f"('{namespace}'). The workspace will reject any write attempt."
+        ),
+        hint=(
+            "Either omit output_path (the server will derive a sensible default "
+            "from your token's username) or ensure it starts with your FULL "
+            "namespace including any suffix. BV-BRC-internal users have "
+            "'@bvbrc' in their username and PATRIC users have '@patricbrc.org'; "
+            "neither suffix may be stripped when constructing the path."
+        ),
+        field="output_path",
+    )
