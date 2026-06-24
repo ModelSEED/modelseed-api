@@ -1218,6 +1218,12 @@ def _reconstruct_one_genome(
 
     # 4. Compute reactions-to-add from the annotation ontology, then build.
     recon = MSReconstructionUtils(**kwargs)
+    # Shim: compute_ontology_model_changes calls self.print_json_debug_file at
+    # line 379 but the method is defined nowhere in KBUtilLib (dead reference,
+    # likely a refactor leftover). Bind a no-op so the call works.
+    # Upstream fix tracked separately; remove this once it lands.
+    if not hasattr(recon, "print_json_debug_file"):
+        recon.print_json_debug_file = lambda *a, **kw: None
     reactions_to_add = recon.compute_ontology_model_changes(
         anno_ont=anno_ont,
         annotation_priority=["PRD"],
