@@ -125,26 +125,20 @@ def test_rast_genome_unknown_genome_yields_5xx(rast_client: httpx.Client) -> Non
     )
 
 
-def test_rast_genome_rejects_patric_token(target_env, live_token) -> None:
-    """MSSS only accepts RAST tokens. PATRIC tokens get translated as 401."""
-    # Use the PATRIC-token client (live_token, NOT live_rast_token).
-    with httpx.Client(
-        base_url=target_env.api_url,
-        headers={"Authorization": live_token},
-        timeout=httpx.Timeout(60.0, connect=10.0),
-        follow_redirects=True,
-    ) as c:
-        r = c.get(
-            "/api/rast/genome",
-            params={
-                "genome_id": KNOWN_JOB["genome_id"],
-                "job_id": KNOWN_JOB["job_id"],
-            },
-        )
-    # The endpoint catches MSSS's "Username not found" and returns 401.
-    assert r.status_code in (401, 502), (
-        f"expected 401 or 502 for PATRIC token, got {r.status_code}: {r.text[:200]}"
-    )
+# Obsolete test removed: test_rast_genome_rejects_patric_token.
+#
+# Premise: "MSSS only accepts RAST tokens; PATRIC tokens get translated as
+# 401." This held when /api/rast/genome proxied to MSSS. As of the MSSS
+# retirement (memory: project_msss_retirement.md, 2026), the endpoint reads
+# RAST job data directly from /vol/rast-prod/jobs via RastFigvReader. Any
+# valid token's username is acceptable as long as it matches the RAST job's
+# owner. PATRIC tokens for jplfaria@patricbrc.org succeed against known
+# RAST jobs owned by jplfaria; the auth dependency does not gatekeep the
+# token type.
+#
+# The auth-required behavior is still covered by test_rast_genome_no_auth_returns_401
+# below. Token-type-specific routing assertions belong with MSSS-era code,
+# which is no longer present.
 
 
 def test_rast_genome_no_auth_returns_401(target_env) -> None:

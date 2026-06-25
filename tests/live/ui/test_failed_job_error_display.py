@@ -30,9 +30,14 @@ _BAD_GENOME = "9999999.9"
 
 
 def _submit_bad_genome(api_url: str, token: str) -> str:
+    # Bypass the pre-flight check (which would otherwise return a synchronous
+    # 404 for this bad genome ID). This test is verifying the UI behavior on
+    # ASYNC job failure - i.e. job dispatches, runs, fails, UI renders the
+    # error. The sync-4xx path is covered separately by route-level tests.
     with httpx.Client(base_url=api_url, headers={"Authorization": token}, timeout=30.0) as c:
         r = c.post(
             "/api/jobs/reconstruct",
+            params={"skip_validation": "true"},
             json={
                 "genome": _BAD_GENOME,
                 "template_type": "gn",
