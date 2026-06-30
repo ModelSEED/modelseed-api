@@ -183,6 +183,8 @@ def annotate_fasta(
                 [genome_dict, {"stages": stages}],
             )
             break
+        except TypeError as exc:
+            raise RuntimeError("RAST malformed error response (expected dict, got str). Original: " + str(exc)) from exc
         except Exception as exc:
             msg = str(exc)
             is_transient = any(code in msg for code in _TRANSIENT_5XX)
