@@ -178,3 +178,20 @@ class TestAnnotateFastaEdgeCases:
 
         with pytest.raises(ValueError, match="no.*functional roles"):
             annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
+
+
+
+class TestAnnotateFastaTypeErrorHandling:
+    def test_rpc_typeerror_wraps_to_runtimeerror(self, monkeypatch):
+        class BadErrorClient:
+            def __init__(self, url, timeout=600):
+                pass
+            def call(self, method, params):
+                raise TypeError(
+                    "argument after ** must be a mapping, not str"
+                )
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.RPCClient", BadErrorClient,
+        )
+        with pytest.raises(RuntimeError, match="malformed error response"):
+            annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
