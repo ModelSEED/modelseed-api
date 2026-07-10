@@ -55,6 +55,16 @@ def merge_ws_metadata(ws, obj_path, new_meta):
     ws.update_metadata({"objects": [[obj_path, merged]]})
 
 
+def _set_biomass_objective(model) -> None:
+    """Set the model objective to bio1 if present, otherwise fall back to the first
+    biomass-like reaction. Silently skips if no biomass reaction is found."""
+    if "bio1" in {r.id for r in model.reactions}:
+        model.objective = "bio1"
+        return
+    biomass_rxns = [r for r in model.reactions if "bio" in r.id.lower()]
+    if biomass_rxns:
+        model.objective = biomass_rxns[0].id
+
 def main():
     parser = argparse.ArgumentParser(description="Model reconstruction job")
     parser.add_argument("--job-id", required=True)
@@ -346,7 +356,7 @@ def main():
             ws = get_storage_service(args.token)
 
             import cobra.io
-            mdlutl.model.objective = "bio1"
+            _set_biomass_objective(mdlutl.model)
             cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
 
             if not hasattr(mdlutl.model, 'get_data'):
