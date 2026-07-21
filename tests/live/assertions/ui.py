@@ -16,12 +16,20 @@ from typing import Callable, Iterable
 #   - status of 404: third-party assets (favicons, sourcemaps) that the
 #     deployed frontend doesn't ship; not material to whether the page
 #     functions.
+#   - status of 403 / %c%d font-size:0: a site-wide script in the frontend
+#     layout (fires identically on every page, not just ones that call our
+#     API) intermittently 403s against its own backend and has a malformed
+#     console.error call (wrong format-string arg count -> "NaN"). Confirmed
+#     via CI logs that our /PMS API calls succeed (200) in the same runs.
+#     Frontend-side bug, flagged to Vibhav; not actionable in this repo.
 _NOISE_PATTERNS: tuple[str, ...] = (
     "ERR_BLOCKED_BY_RESPONSE.NotSameOrigin",
     "googletagmanager",
     "fonts.googleapis",
     "status of 401",
     "status of 404",
+    "status of 403",
+    "%c%d font-size:0;color:transparent",
 )
 
 
