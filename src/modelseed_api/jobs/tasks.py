@@ -731,7 +731,22 @@ def reconstruct(
         # Save cobra JSON BEFORE CobraModelConverter (which loses exchange
         # bounds and breaks FBA). cobra.io roundtrip is lossless.
         import cobra.io
-        mdlutl.model.objective = "bio1"
+        # Some template + input combos produce a model without a "bio1"
+        # biomass reaction (e.g. gene set below the classifier threshold
+        # so template selection went sideways). cobra raises the
+        # inscrutable "invalid objective" when you try to set an
+        # objective by name that isn't present. Translate to something
+        # the user (or the failure_watcher classifier) can act on.
+        if "bio1" in {r.id for r in mdlutl.model.reactions}:
+            mdlutl.model.objective = "bio1"
+        else:
+            raise RuntimeError(
+                "Model has no 'bio1' biomass reaction; reconstruction "
+                "produced an incomplete model. Common causes: input "
+                "genome too small for the classifier, or the selected "
+                "template lacks a biomass definition. Try template_type "
+                "explicitly (gn/gp/ar) or provide a larger input genome."
+            )
         cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
 
         if not hasattr(mdlutl.model, 'get_data'):

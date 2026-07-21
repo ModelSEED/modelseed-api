@@ -27,11 +27,32 @@ logger = logging.getLogger(__name__)
 RAST_URL = "https://tutorial.theseed.org/services/genome_annotation"
 
 # tutorial.theseed.org returns transient 5xx (most commonly 504 Gateway
-# Timeout when the kmer service is under load). Same input that just 504'd
-# usually succeeds on retry within seconds. Retry transient upstream
-# failures so users don't see them as job failures. Non-transient errors
-# (4xx, schema errors, etc.) raise on the first attempt.
+# Timeout when the kmer service is under load) and also intermittently
+# times out at the socket layer or fails DNS resolution. Same input that
+# just failed usually succeeds on retry within seconds. Retry all shapes
+# so users don't see them as job failures. Non-transient errors (4xx,
+# schema errors, etc.) raise on the first attempt.
 _TRANSIENT_5XX = ("500", "502", "503", "504")
+# Substrings that indicate a socket/DNS/connection-layer transient rather
+# than an application-level error. Match against str(exc) OR type(exc)
+# __name__ (see is_transient below).
+_TRANSIENT_MARKERS = (
+    "tutorial.theseed.org",  # any RAST connection issue = transient
+    "Read timed out",
+    "Max retries exceeded",
+    "Temporary failure in name resolution",
+    "Connection reset by peer",
+    "Connection aborted",
+)
+_TRANSIENT_EXC_NAMES = frozenset({
+    "ReadTimeout",
+    "ReadTimeoutError",
+    "ConnectionError",
+    "MaxRetryError",
+    "ProtocolError",
+    "NewConnectionError",
+    "NameResolutionError",
+})
 _MAX_RETRIES = 3
 _BACKOFF_SECONDS = (5, 15)  # waits between attempts 1->2 and 2->3
 
@@ -185,7 +206,11 @@ def annotate_fasta(
             break
         except Exception as exc:
             msg = str(exc)
-            is_transient = any(code in msg for code in _TRANSIENT_5XX)
+            is_transient = (
+                any(code in msg for code in _TRANSIENT_5XX)
+                or any(marker in msg for marker in _TRANSIENT_MARKERS)
+                or type(exc).__name__ in _TRANSIENT_EXC_NAMES
+            )
             if not is_transient or attempt == _MAX_RETRIES:
                 raise
             wait = _BACKOFF_SECONDS[attempt - 1]
