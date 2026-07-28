@@ -53,8 +53,8 @@ _TRANSIENT_EXC_NAMES = frozenset({
     "NewConnectionError",
     "NameResolutionError",
 })
-_MAX_RETRIES = 3
-_BACKOFF_SECONDS = (5, 15)  # waits between attempts 1->2 and 2->3
+_MAX_RETRIES = 5
+_BACKOFF_SECONDS = (5, 15, 60, 180)  # waits between attempts 1->2, 2->3, 3->4, 4->5
 
 _PROTEIN_STAGES = [
     {"name": "annotate_proteins_kmer_v2", "kmer_v2_parameters": {}},

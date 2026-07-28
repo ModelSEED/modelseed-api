@@ -11,7 +11,9 @@ from __future__ import annotations
 import pytest
 
 from modelseed_api.services.genome_annotator import (
+    _BACKOFF_SECONDS,
     _DNA_STAGES,
+    _MAX_RETRIES,
     _PROTEIN_STAGES,
     _parse_fasta_records,
     annotate_fasta,
@@ -178,3 +180,88 @@ class TestAnnotateFastaEdgeCases:
 
         with pytest.raises(ValueError, match="no.*functional roles"):
             annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
+
+
+class TestAnnotateFastaRetry:
+    """Covers the retry window widened for issue #28 (sustained RAST 504s)."""
+
+    def test_retries_on_transient_error_then_succeeds(self, monkeypatch):
+        import requests
+
+        calls = []
+
+        class TimeoutThenSuccessClient:
+            def __init__(self, url, timeout=600):
+                pass
+
+            def call(self, method, params):
+                calls.append(1)
+                if len(calls) < _MAX_RETRIES:
+                    raise requests.exceptions.ReadTimeout(
+                        "Read timed out. (read timeout=600)"
+                    )
+                return [{
+                    "features": [
+                        {"id": "p1", "protein_translation": "MKK",
+                         "function": "Pyruvate kinase"},
+                    ],
+                }]
+
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.RPCClient",
+            TimeoutThenSuccessClient,
+        )
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.time.sleep", lambda _: None
+        )
+
+        ms_genome = annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
+        assert len(calls) == _MAX_RETRIES
+        assert len(ms_genome.features) == 1
+
+    def test_reraises_after_exhausting_retries(self, monkeypatch):
+        import requests
+
+        calls = []
+
+        class AlwaysTimeoutClient:
+            def __init__(self, url, timeout=600):
+                pass
+
+            def call(self, method, params):
+                calls.append(1)
+                raise requests.exceptions.ReadTimeout(
+                    "Read timed out. (read timeout=600)"
+                )
+
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.RPCClient",
+            AlwaysTimeoutClient,
+        )
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.time.sleep", lambda _: None
+        )
+
+        with pytest.raises(requests.exceptions.ReadTimeout):
+            annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
+        assert len(calls) == _MAX_RETRIES
+        assert len(_BACKOFF_SECONDS) == _MAX_RETRIES - 1
+
+    def test_non_transient_error_not_retried(self, monkeypatch):
+        calls = []
+
+        class AlwaysFailClient:
+            def __init__(self, url, timeout=600):
+                pass
+
+            def call(self, method, params):
+                calls.append(1)
+                raise ValueError("400 Bad Request: genome missing required field")
+
+        monkeypatch.setattr(
+            "modelseed_api.services.genome_annotator.RPCClient", AlwaysFailClient,
+        )
+
+        with pytest.raises(ValueError, match="400 Bad Request"):
+            annotate_fasta(">p1\nMKKLVAVLIVSLAVALSALAVA")
+        assert len(calls) == 1  # no retry for non-transient
