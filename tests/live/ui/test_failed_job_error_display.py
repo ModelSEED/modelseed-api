@@ -66,6 +66,7 @@ def _wait_for_failure(api_url: str, token: str, job_id: str, timeout_s: int = 30
     )
 
 
+@pytest.mark.flaky_external
 def test_failed_job_error_visible_in_ui(
     authenticated_page,
     target_env,

@@ -184,7 +184,13 @@ class TestAnnotateFastaRetriesOnTransient:
                 raise RuntimeError("HTTPError: 504 Gateway Timeout")
 
         monkeypatch.setattr(genome_annotator, "RPCClient", AlwaysFlakyClient)
-        monkeypatch.setattr(genome_annotator, "_BACKOFF_SECONDS", (0, 0))
+        # Backoff tuple must have _MAX_RETRIES - 1 entries or the retry loop
+        # indexes past the end on the later attempts.
+        monkeypatch.setattr(
+            genome_annotator,
+            "_BACKOFF_SECONDS",
+            (0,) * (genome_annotator._MAX_RETRIES - 1),
+        )
 
         with pytest.raises(RuntimeError, match="504"):
             genome_annotator.annotate_fasta(">p1\nMKKLVAVLIVSLAVAL")

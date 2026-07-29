@@ -18,6 +18,7 @@ from tests.live.assertions.ui import (
 pytestmark = pytest.mark.requires_token
 
 
+@pytest.mark.flaky_external
 def test_my_models_page_renders(authenticated_page, target_env) -> None:
     """U07: /my-models loads with auth and shows either models or an empty state."""
     errors = collect_console_errors(authenticated_page)

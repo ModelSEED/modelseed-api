@@ -328,3 +328,8 @@ def pytest_collection_modifyitems(config, items) -> None:  # noqa: D401
             if part in dir_to_marker:
                 item.add_marker(getattr(pytest.mark, dir_to_marker[part]))
                 break
+        # Tests marked flaky_external (production/PATRIC/BV-BRC/SOLR
+        # instability, not our bug) get one automatic retry via
+        # pytest-rerunfailures instead of failing the whole run outright.
+        if item.get_closest_marker("flaky_external") is not None:
+            item.add_marker(pytest.mark.flaky(reruns=1, reruns_delay=5))
