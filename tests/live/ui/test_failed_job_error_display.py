@@ -17,9 +17,12 @@ so we have concrete evidence of what the UI shows instead.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import httpx
 import pytest
+
+_REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 
 pytestmark = pytest.mark.requires_token
 
@@ -71,7 +74,6 @@ def test_failed_job_error_visible_in_ui(
     authenticated_page,
     target_env,
     live_token,
-    tmp_path,
 ) -> None:
     """Submit a bad-genome job, then assert /my-jobs shows the error text.
 
@@ -115,17 +117,25 @@ def test_failed_job_error_visible_in_ui(
         body_text = page.text_content("body") or ""
 
     if "9999999.9" not in body_text:
-        # Capture concrete evidence of what the UI does show.
-        shot = tmp_path / "my_jobs_failed_job.png"
+        # Capture concrete evidence of what the UI does show. Saved under
+        # tests/live/reports/ (not a pytest tmp_path) so it's actually
+        # included in the ui-report-* artifact uploaded by CI.
+        _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        shot = _REPORTS_DIR / f"my_jobs_failed_job_{job_id[:8]}.png"
         page.screenshot(path=str(shot), full_page=True)
         # Also dump the body text excerpt around the job id so we can see
-        # the badge label the UI uses instead.
+        # the badge label the UI uses instead. If the job id isn't present
+        # at all, dump the page URL + a body prefix so we can tell whether
+        # the page redirected (e.g. an expired/invalid auth session bouncing
+        # back to the sign-in page) versus rendered but omitted the detail.
         excerpt = ""
         idx = body_text.find(job_id[:8])
         if idx >= 0:
             excerpt = body_text[max(0, idx - 100) : idx + 400]
+        else:
+            excerpt = f"[job id not found on page; current URL={page.url!r}] " + body_text[:400]
         raise AssertionError(
             f"/my-jobs did not display the error text '9999999.9' for failed "
             f"job {job_id}. Screenshot at {shot}. "
-            f"Body excerpt around the job id:\n{excerpt!r}"
+            f"Body excerpt:\n{excerpt!r}"
         )

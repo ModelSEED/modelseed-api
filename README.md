@@ -4,7 +4,7 @@ Modern REST API backend for the [ModelSEED](https://modelseed.org) metabolic mod
 
 The API handles model listing, reconstruction, gapfilling, FBA, biochemistry queries, and PATRIC workspace operations. Long-running jobs (model building, gapfilling, FBA) run as Celery tasks in production or as subprocesses in local development.
 
-The user-facing frontend is a separate Next.js/TypeScript application maintained by Vibhav, deployed at https://modelseed.org. This repo also includes a lightweight demo dashboard at `/demo/` for development and testing.
+The user-facing web frontend is a separate Next.js/TypeScript application deployed at https://modelseed.org. This repo also ships a lightweight demo dashboard (`/demo/`) used for development and manual testing of the API; it is not the production UI.
 
 
 ## Live API
@@ -17,17 +17,33 @@ The production API is served at **https://modelseed.org/PMS/**.
 | https://modelseed.org/PMS/redoc | ReDoc API docs (readable) |
 | https://modelseed.org/PMS/openapi.json | OpenAPI spec |
 | https://modelseed.org/PMS/api/health | Health check |
-| https://modelseed.org/PMS/demo/ | Demo dashboard |
 
-For deployment, restart procedures, on-call runbook, and infrastructure details, see the private operations repo: [`ModelSEED/modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops). Access is invite-only: ask Chris Henry or Jose Faria.
+Biochemistry endpoints are public, so the API can be exercised without an account:
+
+```bash
+curl https://modelseed.org/PMS/api/health
+curl 'https://modelseed.org/PMS/api/biochem/stats'
+curl 'https://modelseed.org/PMS/api/biochem/search?query=glucose&type=compounds&limit=5'
+```
+
+Model, job, media, and workspace endpoints require a PATRIC token (see [Authentication](#authentication)).
 
 
 ## Run standalone (your own machine, no ANL setup)
 
-The repo ships a self-contained Docker image on GitHub Container Registry. Bundles all dependencies + biochemistry data; no PATRIC account or RAST account needed for the local-mode workflow.
+The repo ships a self-contained Docker image. It bundles all dependencies and the biochemistry database; no PATRIC account, RAST account, or ANL infrastructure is needed for the local-mode workflow.
 
 ```bash
 docker run -p 8000:8000 ghcr.io/modelseed/modelseed-api:latest
+```
+
+Or build the same image from source, which needs nothing but this repo and network access (the Dockerfile clones the dependency repos itself):
+
+```bash
+git clone https://github.com/ModelSEED/modelseed-api.git
+cd modelseed-api
+docker build -f Dockerfile.standalone -t modelseed-api .
+docker run -p 8000:8000 modelseed-api
 ```
 
 Then open `http://localhost:8000/demo/` or hit the API directly:
@@ -56,7 +72,7 @@ Most endpoints require a PATRIC token in the `Authorization` header (not needed 
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/health` | No | Returns `{"status":"ok","version":"0.1.0"}` |
+| `GET` | `/api/health` | No | Returns `{"status":"ok","version":"1.0.0"}` |
 
 ### Models (`/api/models`)
 
@@ -79,11 +95,12 @@ Most endpoints require a PATRIC token in the `Authorization` header (not needed 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/jobs` | Check job statuses (supports `ids` filter and status filters) |
-| `POST` | `/api/jobs/reconstruct` | Build a metabolic model from a BV-BRC genome ID |
+| `POST` | `/api/jobs/reconstruct` | Build a metabolic model from a BV-BRC genome ID, a FASTA upload, or a RAST job ID |
+| `POST` | `/api/jobs/bulk_reconstruct` | Build models for many genomes in one job (see [`docs/BULK_RECONSTRUCT.md`](docs/BULK_RECONSTRUCT.md)) |
 | `POST` | `/api/jobs/gapfill` | Gapfill a model against a media condition |
 | `POST` | `/api/jobs/fba` | Run flux balance analysis |
-| `POST` | `/api/jobs/merge` | Merge multiple models |
-| `POST` | `/api/jobs/manage` | Delete or rerun jobs |
+| `POST` | `/api/jobs/merge` | Merge multiple models (not yet implemented, returns HTTP 501) |
+| `POST` | `/api/jobs/manage` | Delete jobs (rerun accepted but not yet implemented) |
 
 ### Biochemistry (`/api/biochem`, no auth)
 
@@ -123,6 +140,25 @@ All workspace operations are POST-based proxies to the PATRIC Workspace service.
 | `POST` | `/api/workspace/metadata` | Update workspace object metadata |
 | `POST` | `/api/workspace/download-url` | Get download URLs |
 | `POST` | `/api/workspace/permissions` | List permissions |
+
+
+## Authentication
+
+Biochemistry endpoints (`/api/biochem/*`) and `/api/health` are public. Everything else requires a PATRIC token passed in the `Authorization` header. In local-storage mode (see below) no authentication is required at all.
+
+To obtain a token:
+
+1. Log in at https://www.bv-brc.org
+2. Open the browser console (F12)
+3. Run `copy(TOKEN)` to copy the token to your clipboard
+
+Then send it with each request:
+
+```bash
+curl -H "Authorization: $PATRIC_TOKEN" https://modelseed.org/PMS/api/models
+```
+
+Tokens expire; if previously working calls start returning 401, request a fresh one.
 
 
 ## MCP Server (AI assistant interface)
@@ -171,9 +207,13 @@ Async tools dispatch jobs via subprocess and poll until completion. Set `wait=Fa
 
 ## Run it locally
 
+This route builds from source against the dependency forks. If you just want a working server, prefer the [standalone image](#run-standalone-your-own-machine-no-anl-setup) above, which does all of this for you.
+
+Requires **Python 3.11+** (or Docker).
+
 ### 1. Clone required repositories
 
-The build context expects all sibling repos as siblings of `modelseed-api/`.
+The build context expects all dependency repos as siblings of `modelseed-api/`.
 
 ```bash
 mkdir modelseed && cd modelseed
@@ -244,10 +284,7 @@ After starting the server (any of 2a / 2b / 2c), it listens on port 8000:
 
 ### 4. Get a PATRIC token (workspace mode only)
 
-1. Log in to https://www.bv-brc.org
-2. Open browser console (F12)
-3. Run: `copy(TOKEN)`
-4. Paste into the demo page token field, or set as the `Authorization` header in API calls.
+Follow [Authentication](#authentication) above, then paste the token into the demo page's token field or send it as the `Authorization` header. Local mode needs no token.
 
 
 ## Architecture
@@ -294,7 +331,7 @@ Key design decisions:
 
 ## Demo dashboard
 
-The demo dashboard at `/demo/` is a single-page HTML app for testing API functionality during development. It is not the production frontend.
+The demo dashboard at `/demo/` is a single-page HTML app for exercising the API by hand during development. It is not the production frontend. When running locally or from the standalone image it is at http://localhost:8000/demo/.
 
 | Tab | What it does |
 |-----|--------------|
@@ -373,8 +410,8 @@ All settings load from environment variables with the `MODELSEED_` prefix or fro
 | `MODELSEED_WORKSPACE_TIMEOUT` | `1800` | Workspace HTTP request timeout (seconds) |
 | `MODELSEED_PUBLIC_MEDIA_PATH` | `/chenry/public/modelsupport/media` | Workspace path for public media |
 | `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
-| `MODELSEED_CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery Redis broker URL |
-| `MODELSEED_CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery Redis result backend URL |
+| `MODELSEED_CELERY_BROKER_URL` | `redis://bioseed_redis:6379/10` | Celery Redis broker URL |
+| `MODELSEED_CELERY_RESULT_BACKEND` | `redis://bioseed_redis:6379/10` | Celery Redis result backend URL |
 | `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
 | `MODELSEED_RAST_JOBS_DIR` | (empty) | Filesystem path to RAST job dirs (`/api/rast/genome`). Leave empty to disable. |
 | `MODELSEED_RAST_DB_HOST` | (empty) | RAST job database host (`/api/rast/jobs`). Leave empty to disable. |
@@ -401,7 +438,11 @@ src/
       model_service.py        #   Model CRUD, gapfill management
       biochem_service.py      #   ModelSEEDDatabase queries
       export_service.py       #   SBML / CobraPy export
+      bulk_export.py          #   Bulk model export
+      genome_annotator.py     #   FASTA annotation via RAST
+      preflight.py            #   Request validation before job dispatch
       rast_service.py         #   RAST endpoints (direct MySQL + filesystem)
+      rast_figv_reader.py     #   Reads RAST job dirs off the filesystem
     jobs/                     # Job dispatch (shared with MCP)
       dispatcher.py           #   Subprocess or Celery dispatch
       store.py                #   Job state (JSON files)
@@ -413,12 +454,14 @@ src/
     tools/                    # MCP tool definitions
   job_scripts/                # External scripts for long-running ops
     reconstruct.py
+    bulk_reconstruct.py
     gapfill.py
     run_fba.py
-    merge_models.py
 data/
   media/public/               # Bundled public media formulations
 docs/
+  STANDALONE.md               # Standalone container walkthrough
+  BULK_RECONSTRUCT.md         # Bulk reconstruction guide
   WORKAROUNDS.md              # Active workarounds with upstream status
   KNOWN_GAPS.md               # Known gaps and follow-ups
   API_ONBOARDING.md           # Onboarding guide for frontend developers
@@ -432,6 +475,16 @@ tests/
 ```
 
 
+## Testing
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+A bare `pytest` run only collects the hermetic suite (unit/routes/integration/e2e/mcp) and never touches the network. The layered live E2E suite against a deployed stack (smoke/functional/biological/ui) is opt-in and requires a `MODELSEED_TEST_TOKEN`; see [`docs/E2E_TEST_PLAN.md`](docs/E2E_TEST_PLAN.md) for `pytest -m live_smoke` and friends.
+
+
 ## Workarounds
 
 A small number of upstream-fix-needed workarounds are tracked in [`docs/WORKAROUNDS.md`](docs/WORKAROUNDS.md) with current upstream status. Most prior workarounds have been merged upstream as of 2026-05.
@@ -439,7 +492,18 @@ A small number of upstream-fix-needed workarounds are tracked in [`docs/WORKAROU
 
 ## Contributing
 
-Open issues and PRs at https://github.com/ModelSEED/modelseed-api/issues. For internal operational concerns (deployment, restarts, on-call), use the private [`modelseed-api-ops`](https://github.com/ModelSEED/modelseed-api-ops) repo instead.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Open issues and pull requests at https://github.com/ModelSEED/modelseed-api/issues.
+
+Deployment and on-call runbooks for the ANL-hosted instance are maintained separately by the ModelSEED team and are not part of this repository. For questions about the hosted deployment, open an issue.
+
+
+## Citing
+
+If you use this software, please cite the ModelSEED v2 paper:
+
+> Faria, J.P., Liu, F., Edirisinghe, J.N., Gupta, N., Seaver, S.M.D., Freiburger, A.P., Setlur, V., Zhang, Q., Weisenhorn, P., Conrad, N., Zarecki, R., Song, H.-S., DeJongh, M., Best, A.A., Cottingham, R.W., Arkin, A.P., and Henry, C.S. (2026). ModelSEED v2: High-throughput genome-scale metabolic model reconstruction with enhanced energy biosynthesis pathway prediction. *bioRxiv*. https://doi.org/10.1101/2023.10.04.556561
+
+To cite this specific software repository/version, see [`CITATION.cff`](CITATION.cff) (also picked up by GitHub's "Cite this repository" button and Zenodo).
 
 
 ## License

@@ -13,7 +13,7 @@ from modelseed_api.schemas.models import (
     EditModelResponse,
     ManageGapfillsRequest,
 )
-from modelseed_api.services.export_service import export_cobra_json, export_sbml, get_cobra_model
+from modelseed_api.services.export_service import get_cobra_model
 from modelseed_api.services.model_service import ModelService
 from modelseed_api.services.workspace_service import WorkspaceError
 

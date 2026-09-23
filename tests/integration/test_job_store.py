@@ -1,7 +1,6 @@
 """Integration tests for JobStore — job lifecycle with real JSON files."""
 
 import json
-import os
 
 import pytest
 

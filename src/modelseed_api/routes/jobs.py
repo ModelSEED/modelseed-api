@@ -4,7 +4,7 @@ The service only dispatches jobs. Actual computation runs in separate job script
 This is a deliberate architectural separation (per Chris Henry).
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -244,24 +244,19 @@ async def merge_models(
     user: AuthUser = Depends(get_current_user),
     skip_validation: bool = Query(default=False),
 ) -> str:
-    """Dispatch model merging to a job script.
+    """Merge multiple models into a community model.
 
-    Pre-flight: each input model must exist in workspace.
-
-    Returns the job ID.
+    Not yet implemented: MSCommunity-based merging hasn't been integrated.
+    See docs/KNOWN_GAPS.md. Returns 501 immediately rather than dispatching
+    a job that would fail once picked up.
     """
-    if not skip_validation:
-        _run_preflight(validate_output_path_under_user, request.output_path, user.username)
-        for model_ref, _abundance in request.models:
-            _run_preflight(validate_model_exists, model_ref, user.token)
-
-    job_id = _dispatcher.dispatch(
-        app="MergeModels",
-        parameters=request.model_dump(),
-        user=user.username,
-        token=user.token,
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Model merging is not yet implemented. "
+            "MSCommunity-based merging is planned but not integrated; see docs/KNOWN_GAPS.md."
+        ),
     )
-    return job_id
 
 
 @router.post("/manage")

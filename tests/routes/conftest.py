@@ -1,7 +1,6 @@
 """Shared fixtures for route tests — TestClient with local storage."""
 
 import json
-import os
 
 import pytest
 from fastapi.testclient import TestClient

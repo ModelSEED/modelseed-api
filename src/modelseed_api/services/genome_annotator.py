@@ -10,7 +10,7 @@ regardless of input.
 The stage lists mirror the legacy ProbModelSEED definitions:
 `Bio::KBase::constants::contig_annotation_pipeline` and
 `Bio::KBase::constants::gene_annotation_pipeline` (see
-`/Users/jplfaria/repos/ProbModelSEED/lib/Bio/KBase/constants.pm`).
+`Bio::KBase::constants` in the legacy ProbModelSEED Perl codebase).
 """
 
 from __future__ import annotations

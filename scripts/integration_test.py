@@ -162,8 +162,8 @@ class TestRunner:
         d = r.json()
         rxn = d.get("total_reactions") or d.get("reactions", 0)
         cpd = d.get("total_compounds") or d.get("compounds", 0)
-        assert int(rxn) > 0, f"no reactions in database"
-        assert int(cpd) > 0, f"no compounds in database"
+        assert int(rxn) > 0, "no reactions in database"
+        assert int(cpd) > 0, "no compounds in database"
         return f"{rxn} reactions, {cpd} compounds"
 
     def test_biochem_reaction_by_id(self):
@@ -261,7 +261,7 @@ class TestRunner:
             if not m.get("ref"):
                 issues.append(f"{mid}: missing ref")
             if not m.get("id"):
-                issues.append(f"model missing id")
+                issues.append("model missing id")
             if not m.get("name"):
                 issues.append(f"{mid}: missing name")
             # Numeric fields — frontend uses safeParseNumber so None is OK
@@ -583,7 +583,7 @@ class TestRunner:
         has_class = "class" in rv or "variableType" in rv
 
         assert has_ref, f"FBA reaction variable missing ref field: {list(rv.keys())}"
-        assert has_value, f"FBA reaction variable missing value/flux"
+        assert has_value, "FBA reaction variable missing value/flux"
 
         # Check FBACompoundVariables too
         has_cpd_vars = any(k in d for k in ("FBACompoundVariables", "fba_compound_variables"))
@@ -619,10 +619,9 @@ class TestRunner:
         assert len(entry) >= 3, f"entry too short ({len(entry)} elements)"
 
         name = entry[0]
-        etype = entry[1]
         epath = entry[2]
-        assert isinstance(name, str) and name, f"entry[0] (name) empty"
-        assert isinstance(epath, str) and epath, f"entry[2] (path) empty"
+        assert isinstance(name, str) and name, "entry[0] (name) empty"
+        assert isinstance(epath, str) and epath, "entry[2] (path) empty"
 
         return f"{sum(len(v) for v in d.values())} media, tuple format OK"
 
@@ -677,7 +676,7 @@ class TestRunner:
             entry = items[0]
             assert isinstance(entry, list), f"entry not tuple: {type(entry)}"
             assert len(entry) >= 4, f"entry too short: {len(entry)}"
-            name, etype, epath = entry[0], entry[1], entry[2]
+            name = entry[0]
             assert isinstance(name, str), "entry[0] not string"
 
         return f"{len(items)} item(s) in {path}"
@@ -1049,12 +1048,12 @@ class TestRunner:
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
-        assert job_id, f"could not extract job_id"
+        assert job_id, "could not extract job_id"
 
         status, job = poll_job(self, job_id, max_seconds=600)
 
         if status == "timeout":
-            self.warn(f"Gapfill timed out after 10 min")
+            self.warn("Gapfill timed out after 10 min")
             return f"job {job_id[:8]}... timeout"
         if status == "failed":
             error = job.get("error", "unknown")
@@ -1086,7 +1085,7 @@ class TestRunner:
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
-        assert job_id, f"could not extract job_id"
+        assert job_id, "could not extract job_id"
 
         status, job = poll_job(self, job_id, max_seconds=300)
 
@@ -1118,7 +1117,7 @@ class TestRunner:
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
-        assert job_id, f"could not extract job_id"
+        assert job_id, "could not extract job_id"
 
         status, job = poll_job(self, job_id, max_seconds=600)
 
@@ -1134,8 +1133,8 @@ class TestRunner:
         added_ids = result.get("added_reaction_ids", [])
 
         assert solutions > 0, (
-            f"Gapfill for glucose found 0 solutions — model can't be made "
-            f"to grow on glucose media"
+            "Gapfill for glucose found 0 solutions — model can't be made "
+            "to grow on glucose media"
         )
         self._pipeline_glucose_gapfilled = True
         return (f"{solutions} solution(s), {added} reactions added"
@@ -1153,7 +1152,7 @@ class TestRunner:
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
-        assert job_id, f"could not extract job_id"
+        assert job_id, "could not extract job_id"
 
         status, job = poll_job(self, job_id, max_seconds=300)
 
@@ -1189,7 +1188,7 @@ class TestRunner:
         })
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         job_id = extract_job_id(r.json())
-        assert job_id, f"could not extract job_id"
+        assert job_id, "could not extract job_id"
         return f"job {job_id[:8]}... submitted (reconstruct+gapfill)"
 
     # ═══════════════════════════════════════════════════════════════════
@@ -1217,7 +1216,7 @@ class TestRunner:
         })
         assert r2.status_code == 200, f"delete failed: {r2.status_code}"
         d = r2.json()
-        assert job_id in d, f"job_id not in response"
+        assert job_id in d, "job_id not in response"
         assert d[job_id].get("status") == "deleted", f"status={d[job_id].get('status')}"
         return f"job {job_id[:8]}... deleted OK"
 
@@ -1326,7 +1325,7 @@ class TestRunner:
 
     def run_all(self):
         self.extract_username()
-        print(f"\nModelseed API Integration Tests (COMPREHENSIVE)")
+        print("\nModelseed API Integration Tests (COMPREHENSIVE)")
         print(f"API: {self.api_url}")
         print(f"User: {self.username or '(unknown)'}")
         print(f"{'=' * 70}\n")
@@ -1473,7 +1472,7 @@ class TestRunner:
         print(f"Results: {passed}/{total} passed, {failed} failed")
 
         if failed:
-            print(f"\n\033[31mFailed tests:\033[0m")
+            print("\n\033[31mFailed tests:\033[0m")
             for r in self.results:
                 if not r.passed:
                     print(f"  - {r.name}: {r.message}")

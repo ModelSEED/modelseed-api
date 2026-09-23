@@ -179,14 +179,8 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-      - name: Install git-only modeling deps + dev extras
-        run: |
-          # kbutillib and cobrakbase aren't on PyPI; install from git first so
-          # the [modeling] extra can resolve.
-          pip install \
-            "git+https://github.com/cshenry/KBUtilLib.git@main" \
-            "git+https://github.com/Fxe/cobrakbase.git@master"
-          pip install -e ".[dev,modeling]"
+      - name: Install
+        run: pip install -e ".[dev,modeling]"
       - name: Run biological layer
         env:
           MODELSEED_TEST_ENV: ${{ inputs.target_env || 'production' }}

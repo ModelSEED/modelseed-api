@@ -1,6 +1,5 @@
 """Unit tests for ModelService._format_model_data — validates formatted output shape and content."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

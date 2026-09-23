@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from modelseed_api import __version__
 from modelseed_api.config import settings
 from modelseed_api.routes import biochem, jobs, media, models, rast, workspace
 
@@ -70,7 +71,8 @@ app = FastAPI(
         "Modern REST API backend for the ModelSEED metabolic modeling platform. "
         "Replaces the legacy Perl-based ProbModelSEED JSON-RPC service."
     ),
-    version="0.1.0",
+    version=__version__,
+    root_path=settings.root_path,
     lifespan=lifespan,
 )
 
@@ -104,7 +106,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """Health check endpoint."""
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": __version__}
 
 
 def custom_openapi():
@@ -115,6 +117,7 @@ def custom_openapi():
         version=app.version,
         description=app.description,
         routes=app.routes,
+        servers=[{"url": settings.root_path}] if settings.root_path else None,
     )
     schema["components"]["securitySchemes"] = {
         "PatricToken": {

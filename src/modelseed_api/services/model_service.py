@@ -12,12 +12,6 @@ from typing import Any, Optional
 
 import requests
 
-from modelseed_api.schemas.models import (
-    FBAData,
-    GapfillData,
-    ModelData,
-    ModelStats,
-)
 from modelseed_api.services.storage_factory import get_storage_service
 
 

@@ -8,9 +8,9 @@ errors that the frontend already knows how to surface. The residual
 in-job-failure path still needs the UI to render `job.error` for
 errors that can only be detected after the worker picks up the job.
 
-This document is for: (a) handing to Vibhav so he can wire both error
-contracts into the UI, and (b) anyone re-verifying the behavior in a
-browser without running Playwright.
+This document is for: (a) whoever wires both error contracts into the
+frontend UI, and (b) anyone re-verifying the behavior in a browser
+without running Playwright.
 
 ## What changed in the API (2026-06-10, commit 413727a)
 

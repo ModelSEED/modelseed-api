@@ -62,7 +62,7 @@ status. The final `result` payload has shape:
   "total": 5,
   "succeeded": 4,
   "failed": 1,
-  "output_path": "/jplfaria@patricbrc.org/modelseed/bulk_<job_id>",
+  "output_path": "/alice@patricbrc.org/modelseed/bulk_<job_id>",
   "reactions_rows": 4200,
   "genes_rows": 3100,
   "per_genome": {
@@ -157,16 +157,17 @@ Same pattern as the single-genome endpoints (see
 
 ```bash
 source ~/.modelseed_tokens.env
+API_URL="${MODELSEED_TEST_API_URL:-http://localhost:8000}"
 JOB=$(curl -sS -X POST \
   -H "Authorization: $MODELSEED_TEST_TOKEN" \
   -H "Content-Type: application/json" \
-  http://poplar.cels.anl.gov:3004/api/jobs/bulk_reconstruct \
+  "$API_URL/api/jobs/bulk_reconstruct" \
   -d @tests/fixtures/bulk_smoke_2genomes.json | tr -d '"')
 echo "submitted: $JOB"
 
 while true; do
   STATUS=$(curl -sS -H "Authorization: $MODELSEED_TEST_TOKEN" \
-    "http://poplar.cels.anl.gov:3004/api/jobs?ids=$JOB" \
+    "$API_URL/api/jobs?ids=$JOB" \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['$JOB']['status'])")
   echo "$STATUS"
   case "$STATUS" in completed|failed) break ;; esac
@@ -186,10 +187,10 @@ done
 - Combined CSV writing happens at the end of the batch (one workspace
   write each for reactions.csv + genes.csv) instead of per-genome
   appends, to minimize workspace round-trips.
-- Upstream prereqs that ship the build path: `cshenry/ModelSEEDpy#26`
-  adds the `AnnotationOntology.from_prd_input` factory and fixes the
-  latent `msbuilder.py:789` `anno_ont.get_feature` bug. The route works
-  the moment that PR is merged + the poplar image rebuilt.
+- Upstream prereq `cshenry/ModelSEEDpy#26` (adds the
+  `AnnotationOntology.from_prd_input` factory and fixes the latent
+  `msbuilder.py:789` `anno_ont.get_feature` bug) merged 2026-06-17. The
+  route is live in production.
 
 ## Out of scope for v1
 

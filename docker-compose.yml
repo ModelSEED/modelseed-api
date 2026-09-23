@@ -18,6 +18,10 @@ services:
       MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
       MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
       MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
+      # Path prefix behind the nginx reverse proxy at modelseed.org. Without
+      # this, /docs and /redoc fetch /openapi.json instead of /PMS/openapi.json
+      # and render blank. Set MODELSEED_ROOT_PATH=/PMS in the host .env.
+      MODELSEED_ROOT_PATH: "${MODELSEED_ROOT_PATH:-}"
       # RAST DB credentials (chestnut MySQL). Values come from the host's
       # .env file in the docker compose run directory. Production sets
       # these to connect to RastProdJobCache + WebAppBackend2 on chestnut.

@@ -6,7 +6,7 @@ Frontend never talks directly to the Workspace service.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from modelseed_api.auth.dependencies import AuthUser, get_current_user
 from modelseed_api.schemas.workspace import (

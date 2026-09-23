@@ -28,7 +28,6 @@ class JobDispatcher:
         "ModelReconstruction": "reconstruct.py",
         "GapfillModel": "gapfill.py",
         "FluxBalanceAnalysis": "run_fba.py",
-        "MergeModels": "merge_models.py",
         "BulkModelReconstruction": "bulk_reconstruct.py",
     }
 

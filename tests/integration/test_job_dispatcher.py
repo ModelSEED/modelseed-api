@@ -1,6 +1,5 @@
 """Integration tests for JobDispatcher — subprocess dispatch with mocked Popen."""
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,13 +8,22 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def dispatcher(job_store_dir):
-    """Create a JobDispatcher backed by a real JobStore in a temp dir."""
+def dispatcher(job_store_dir, tmp_path):
+    """Create a JobDispatcher backed by a real JobStore in a temp dir.
+
+    scripts_dir is redirected to an isolated temp directory. Without this,
+    JobDispatcher.__init__ resolves it to the real project src/job_scripts/
+    (settings.job_scripts_dir defaults to a relative path), and the
+    touch()/unlink() dance the tests below do would create and then DELETE
+    the real reconstruct.py on every test run.
+    """
     from modelseed_api.jobs.dispatcher import JobDispatcher
     from modelseed_api.jobs.store import JobStore
 
     store = JobStore()
-    return JobDispatcher(store), store
+    disp = JobDispatcher(store)
+    disp.scripts_dir = tmp_path / "job_scripts"
+    return disp, store
 
 
 class TestDispatchSubprocess:
@@ -69,7 +77,7 @@ class TestDispatchSubprocess:
         script_path.touch()
         try:
             large_params = {"genome_fasta": "A" * 200_000}
-            job_id = disp.dispatch("ModelReconstruction", large_params, "user1", "token")
+            disp.dispatch("ModelReconstruction", large_params, "user1", "token")
             # Check that Popen was called with @-prefixed params arg
             call_args = mock_popen.call_args[0][0]
             params_arg = call_args[call_args.index("--params") + 1]

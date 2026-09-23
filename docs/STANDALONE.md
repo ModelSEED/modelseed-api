@@ -19,7 +19,7 @@ Open `http://localhost:8000/demo/` in your browser, or hit the API directly:
 
 ```bash
 curl http://localhost:8000/api/health
-# {"status":"ok","version":"0.1.0"}
+# {"status":"ok","version":"1.0.0"}
 
 curl 'http://localhost:8000/api/biochem/search?query=glucose&type=compounds&limit=5'
 # [{"id":"cpd00027","name":"D-Glucose",...}, ...]
@@ -51,7 +51,7 @@ Now models, gapfill solutions, FBA results, and uploaded media live in `~/.model
 | `/api/jobs/reconstruct` (RAST job id) | only on ANL setup | needs `/vol/rast-prod/jobs` filesystem mount |
 | `/api/jobs/gapfill` | yes | pure local compute |
 | `/api/jobs/fba` | yes | pure local compute |
-| `/api/jobs/merge` | yes | pure local compute |
+| `/api/jobs/merge` | no | not yet implemented on any deployment; always returns HTTP 501 (see `docs/KNOWN_GAPS.md`) |
 | `/api/workspace/*` | only with PATRIC | proxies the PATRIC Workspace Service |
 | `/api/rast/jobs` | only on ANL setup | needs chestnut MySQL access |
 | `/api/rast/genome` | only on ANL setup | needs `/vol/rast-prod/jobs` filesystem mount |
@@ -150,7 +150,7 @@ Most users don't need any of these. They exist for the modelseed.org production 
 Images are published on every push to `main` and tagged on every git tag:
 
 - `ghcr.io/modelseed/modelseed-api:latest` -- tip of main, may have unreleased changes
-- `ghcr.io/modelseed/modelseed-api:v0.1.0` -- specific release; recommended for production-like use
+- `ghcr.io/modelseed/modelseed-api:1.0.0` -- specific release; recommended for production-like use
 - `ghcr.io/modelseed/modelseed-api:main-<sha>` -- specific commit on main
 
 To upgrade: `docker pull ghcr.io/modelseed/modelseed-api:latest` then restart your container. Local-storage data in your bind-mount survives the upgrade.

@@ -174,28 +174,16 @@ def merge_models(
 ) -> dict:
     """Merge multiple metabolic models into a community model.
 
-    Args:
-        models: List of models to merge. Each dict: {model_ref: str, abundance: float}
-        output_file: Name for the output model file
-        output_path: Workspace path for the merged model
-        wait: Wait for completion (default True)
-        timeout: Max seconds to wait (default 600)
+    Not yet implemented: MSCommunity-based merging hasn't been integrated.
+    See docs/KNOWN_GAPS.md in the modelseed-api repo.
     """
-    dispatcher, store = _get_dispatcher()
-
-    model_tuples = [(m["model_ref"], m["abundance"]) for m in models]
-    params = {
-        "models": model_tuples,
-        "output_file": output_file,
-        "output_path": output_path,
+    return {
+        "error": (
+            "Model merging is not yet implemented. "
+            "MSCommunity-based merging is planned but not integrated; see docs/KNOWN_GAPS.md."
+        ),
+        "status": "not_implemented",
     }
-
-    job_id = dispatcher.dispatch("MergeModels", params, LOCAL_USER, LOCAL_TOKEN)
-
-    if not wait:
-        return {"job_id": job_id, "status": "queued"}
-
-    return _poll_job(store, job_id, timeout=timeout)
 
 
 @mcp.tool()

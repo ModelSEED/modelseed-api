@@ -1,7 +1,7 @@
 """Media routes - list public/user media, export."""
 
 import json
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query

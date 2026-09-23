@@ -1,7 +1,6 @@
 """Shared fixtures for integration tests — real filesystem, temp dirs."""
 
 import json
-import os
 
 import pytest
 

@@ -22,6 +22,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +66,8 @@ def main():
 
     store_dir = Path(args.job_store_dir)
     job_file = store_dir / f"{args.job_id}.json"
-    now = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
+    def now():
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
 
     update_job(job_file, {"status": "in-progress", "start_time": now()})
 
@@ -112,9 +114,8 @@ def main():
         from modelseed_api.config import settings
         from modelseed_api.services.storage_factory import get_storage_service
         from modelseed_api.jobs.tasks import (
-            _load_template, _get_classifier, _classify_genome,
+            _load_template, _classify_genome,
             _load_media, _resolve_media_ref, _fix_gapfilling_metadata,
-            TEMPLATE_FILES,
         )
 
         os.environ.setdefault("KB_AUTH_TOKEN", "unused")
@@ -166,9 +167,9 @@ def main():
                 update_job(job_file, {"progress": "Classifying genome..."})
                 class_name, resolved_type = _classify_genome(genome)
                 gs_template_obj = _load_template(resolved_type)
-                print(
-                    f"Auto-classified RAST genome as {class_name}, "
-                    f"using template {resolved_type}"
+                logger.info(
+                    "Auto-classified RAST genome as %s, using template %s",
+                    class_name, resolved_type,
                 )
 
             update_job(job_file, {"progress": "Building model..."})
@@ -193,7 +194,7 @@ def main():
                     "completed_time": now(),
                     "result": result_data,
                 })
-                print(f"Model skipped: {result_data}")
+                logger.info("Model skipped: %s", result_data)
                 return
 
             # Override genome_id used downstream so saved metadata reflects
@@ -209,10 +210,10 @@ def main():
 
             update_job(job_file, {"progress": "Annotating genome..."})
             ms_genome = annotate_fasta(genome_fasta, scientific_name=genome_id)
-            print(
-                f"Annotated FASTA -> {len(ms_genome.features)} features "
-                f"({sum(1 for f in ms_genome.features if f.ontology_terms.get('RAST'))} "
-                f"with assigned function)"
+            logger.info(
+                "Annotated FASTA -> %d features (%d with assigned function)",
+                len(ms_genome.features),
+                sum(1 for f in ms_genome.features if f.ontology_terms.get("RAST")),
             )
 
             organism_name = genome_id
@@ -268,7 +269,7 @@ def main():
                 update_job(job_file, {"progress": "Classifying genome..."})
                 class_name, resolved_type = _classify_genome(genome)
                 gs_template_obj = _load_template(resolved_type)
-                print(f"Auto-classified as {class_name}, using template {resolved_type}")
+                logger.info("Auto-classified as %s, using template %s", class_name, resolved_type)
 
             update_job(job_file, {"progress": "Building model..."})
             output, mdlutl = recon.build_metabolic_model(
@@ -295,7 +296,7 @@ def main():
                     "completed_time": now(),
                     "result": result_data,
                 })
-                print(f"Model skipped: {result_data}")
+                logger.info("Model skipped: %s", result_data)
                 return
 
         # Resolve template for gapfilling if auto was used
@@ -331,7 +332,7 @@ def main():
                 atp_safe=True,
             )
             gapfill_count = gf_output.get("GS GF") or 0
-            print(f"Gapfill: GS_GF={gapfill_count} Growth={gf_output.get('Growth')}")
+            logger.info("Gapfill: GS_GF=%s Growth=%s", gapfill_count, gf_output.get("Growth"))
 
         # Compute stats
         n_reactions = output.get("Reactions", len(mdlutl.model.reactions))
@@ -394,7 +395,7 @@ def main():
             try:
                 merge_ws_metadata(ws, output_path, folder_meta)
             except Exception as e:
-                print(f"Warning: failed to update folder metadata: {e}")
+                logger.warning("Failed to update folder metadata: %s", e)
 
         result_data = {
             "status": "success",
@@ -417,8 +418,10 @@ def main():
             "result": result_data,
         })
 
-        print(f"Reconstruction completed: {n_reactions} reactions, "
-              f"{n_genes} genes, class={classification}")
+        logger.info(
+            "Reconstruction completed: %d reactions, %d genes, class=%s",
+            n_reactions, n_genes, classification,
+        )
 
     except Exception as e:
         update_job(job_file, {
@@ -426,7 +429,7 @@ def main():
             "error": str(e),
             "completed_time": now(),
         })
-        print(f"Reconstruction failed: {e}", file=sys.stderr)
+        logger.error("Reconstruction failed: %s", e)
         sys.exit(1)
 
 

@@ -195,10 +195,8 @@ class TestRunFBA:
 
 
 class TestMergeModels:
-    @patch(PATCH_STORE)
-    @patch(PATCH_DISPATCHER)
-    def test_dispatch(self, MockDispatcher, MockStore):
-        MockDispatcher.return_value.dispatch.return_value = "merge-123"
+    def test_not_implemented(self):
+        """Merge is not yet implemented; returns an error dict, no job dispatched."""
         result = merge_models(
             [{"model_ref": "/local/modelseed/a", "abundance": 0.5},
              {"model_ref": "/local/modelseed/b", "abundance": 0.5}],
@@ -206,35 +204,8 @@ class TestMergeModels:
             output_path="/local/modelseed/merged",
             wait=False,
         )
-        assert result["job_id"] == "merge-123"
-
-    @patch(PATCH_STORE)
-    @patch(PATCH_DISPATCHER)
-    def test_model_tuples_format(self, MockDispatcher, MockStore):
-        """Models should be converted to tuples of (ref, abundance)."""
-        MockDispatcher.return_value.dispatch.return_value = "merge-x"
-        merge_models(
-            [{"model_ref": "/local/a", "abundance": 0.7},
-             {"model_ref": "/local/b", "abundance": 0.3}],
-            output_file="out",
-            output_path="/local/out",
-            wait=False,
-        )
-        params = MockDispatcher.return_value.dispatch.call_args[0][1]
-        assert params["models"] == [("/local/a", 0.7), ("/local/b", 0.3)]
-
-    @patch(PATCH_STORE)
-    @patch(PATCH_DISPATCHER)
-    def test_app_name_is_merge(self, MockDispatcher, MockStore):
-        """App name should be MergeModels."""
-        MockDispatcher.return_value.dispatch.return_value = "merge-x"
-        merge_models(
-            [{"model_ref": "/local/a", "abundance": 1.0}],
-            output_file="out",
-            output_path="/local/out",
-            wait=False,
-        )
-        assert MockDispatcher.return_value.dispatch.call_args[0][0] == "MergeModels"
+        assert result["status"] == "not_implemented"
+        assert "error" in result
 
 
 class TestCheckJob:

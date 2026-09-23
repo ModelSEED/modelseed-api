@@ -7,6 +7,8 @@ injected into browser storage; the `authenticated_page` fixture does that
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.live.assertions.ui import (
@@ -16,6 +18,24 @@ from tests.live.assertions.ui import (
 )
 
 pytestmark = pytest.mark.requires_token
+
+_REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
+
+
+def _dump_evidence(page, name: str, body: str) -> str:
+    """Save a screenshot + return a diagnostic string with URL and body prefix.
+
+    Screenshots go under tests/live/reports/ (uploaded as a CI artifact by
+    live-tests.yml), not a pytest tmp_path, so failures are actually
+    diagnosable from the Actions tab without re-running locally.
+    """
+    _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    shot = _REPORTS_DIR / f"{name}.png"
+    try:
+        page.screenshot(path=str(shot), full_page=True)
+    except Exception as e:
+        shot = f"<screenshot failed: {e}>"
+    return f"current URL={page.url!r}, screenshot={shot}, body prefix={body[:300]!r}"
 
 
 @pytest.mark.flaky_external
@@ -30,7 +50,9 @@ def test_my_models_page_renders(authenticated_page, target_env) -> None:
     has_content = (
         "model" in body and ("rxn" in body or "reaction" in body or "no models" in body)
     )
-    assert has_content, "My Models page didn't render expected table or empty state"
+    if not has_content:
+        evidence = _dump_evidence(authenticated_page, "my_models_no_content", body)
+        raise AssertionError(f"My Models page didn't render expected table or empty state ({evidence})")
 
     real_errors = filter_noise(errors)
     assert not real_errors, f"Console errors on /my-models: {real_errors}"
@@ -40,7 +62,7 @@ def test_my_jobs_page_renders(authenticated_page, target_env) -> None:
     """U08 (partial): /my-jobs loads with auth and shows the jobs table or empty state.
 
     The full job-polling assertion (jobs appearing within 4 seconds of submission)
-    is deferred — it requires submitting a job from inside the test, which is
+    is deferred: it requires submitting a job from inside the test, which is
     expensive. The structural check here verifies the page at least renders.
     """
     errors = collect_console_errors(authenticated_page)
@@ -49,7 +71,9 @@ def test_my_jobs_page_renders(authenticated_page, target_env) -> None:
 
     body = (authenticated_page.text_content("body") or "").lower()
     has_content = "job" in body
-    assert has_content, "My Jobs page didn't render expected content"
+    if not has_content:
+        evidence = _dump_evidence(authenticated_page, "my_jobs_no_content", body)
+        raise AssertionError(f"My Jobs page didn't render expected content ({evidence})")
 
     real_errors = filter_noise(errors)
     assert not real_errors, f"Console errors on /my-jobs: {real_errors}"

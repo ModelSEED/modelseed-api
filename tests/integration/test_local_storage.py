@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from modelseed_api.services.local_storage_service import LocalStorageService
 from modelseed_api.services.workspace_service import WorkspaceError
 
 pytestmark = pytest.mark.integration

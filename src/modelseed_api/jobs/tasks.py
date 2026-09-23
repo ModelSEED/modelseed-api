@@ -1206,7 +1206,6 @@ def _reconstruct_one_genome(
     """
     from kbutillib import MSReconstructionUtils
     from modelseedpy.core.annotationontology import AnnotationOntology
-    from modelseedpy.core.msbuilder import MSBuilder
 
     # 1. Build AnnotationOntology from PRD payload + run upstream translation
     anno_ont = AnnotationOntology.from_prd_input(

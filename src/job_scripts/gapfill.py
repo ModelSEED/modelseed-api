@@ -5,7 +5,7 @@ Uses MSGapfill to gapfill a metabolic model fetched from the workspace.
 
 Pipeline:
   1. Fetch model from workspace (handle Shock URLs)
-  2. Convert to cobra model via workspace_model_to_cobra()
+  2. Convert to cobra model via get_cobra_model() / _model_obj_to_cobra()
   3. Load template from local ModelSEEDTemplates repo
   4. Run MSGapfill
   5. Save gapfilled model back to workspace
@@ -67,7 +67,8 @@ def main():
 
     store_dir = Path(args.job_store_dir)
     job_file = store_dir / f"{args.job_id}.json"
-    now = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
+    def now():
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d-%H:%M:%S")
 
     update_job(job_file, {"status": "in-progress", "start_time": now()})
 
@@ -133,7 +134,7 @@ def main():
                 import cobra.io
                 fba_model = cobra.io.model_from_dict(json.loads(cobra_raw))
                 fba_model.objective = "bio1"
-                print(f"Loaded cobra_model from workspace (lossless)")
+                print("Loaded cobra_model from workspace (lossless)")
         except Exception:
             pass  # cobra_model not available, fall back to FBAModelBuilder
 
@@ -146,7 +147,7 @@ def main():
                     for _sub in _prot.get("modelReactionProteinSubunits", []):
                         _sub.setdefault("optionalSubunit", 0)
             fba_model = FBAModelBuilder(model_obj).build()
-            print(f"Loaded model via FBAModelBuilder (fallback)")
+            print("Loaded model via FBAModelBuilder (fallback)")
 
         mdlutl = MSModelUtil.get(fba_model)
 

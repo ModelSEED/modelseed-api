@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: list[str] = ["*"]
 
+    # Path prefix the app is mounted under behind a reverse proxy (e.g. "/PMS"
+    # for the modelseed.org production deployment). Leave empty when serving
+    # from the domain root (local dev, standalone image). Without this set to
+    # match the proxy, FastAPI's built-in /docs and /redoc pages fetch
+    # /openapi.json instead of <prefix>/openapi.json and render a blank page.
+    root_path: str = ""
+
     # Storage backend: "workspace" (PATRIC) or "local" (filesystem)
     storage_backend: str = "workspace"
     local_data_dir: str = "~/.modelseed/data"
@@ -61,11 +68,6 @@ class Settings(BaseSettings):
     # data on disk; the route handlers return 503 in that case. Production
     # poplar deployment sets this to "/vol/rast-prod/jobs" via .env.
     rast_jobs_dir: str = ""
-
-    # Persistent index file for /api/rast/jobs (job_id -> user metadata).
-    # Built at container startup; sub-millisecond reads thereafter. Leave
-    # empty to use the default in-container path /tmp/rast_user_index.json.
-    rast_index_path: str = ""
 
     # Timeouts
     workspace_timeout: int = 1800  # 30 minutes (matching existing client)

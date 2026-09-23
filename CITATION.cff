@@ -1,0 +1,55 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below. Please also cite the associated paper (see preferred-citation)."
+type: software
+title: "ModelSEED API"
+version: 1.0.0
+date-released: "2026-09-23"
+repository-code: "https://github.com/ModelSEED/modelseed-api"
+url: "https://modelseed.org"
+license: MIT
+authors:
+  - family-names: Faria
+    given-names: "J. P."
+  - family-names: Henry
+    given-names: "C. S."
+preferred-citation:
+  type: article
+  title: "ModelSEED v2: High-throughput genome-scale metabolic model reconstruction with enhanced energy biosynthesis pathway prediction"
+  authors:
+    - family-names: Faria
+      given-names: "J. P."
+    - family-names: Liu
+      given-names: "F."
+    - family-names: Edirisinghe
+      given-names: "J. N."
+    - family-names: Gupta
+      given-names: "N."
+    - family-names: Seaver
+      given-names: "S. M. D."
+    - family-names: Freiburger
+      given-names: "A. P."
+    - family-names: Setlur
+      given-names: "V."
+    - family-names: Zhang
+      given-names: "Q."
+    - family-names: Weisenhorn
+      given-names: "P."
+    - family-names: Conrad
+      given-names: "N."
+    - family-names: Zarecki
+      given-names: "R."
+    - family-names: Song
+      given-names: "H.-S."
+    - family-names: DeJongh
+      given-names: "M."
+    - family-names: Best
+      given-names: "A. A."
+    - family-names: Cottingham
+      given-names: "R. W."
+    - family-names: Arkin
+      given-names: "A. P."
+    - family-names: Henry
+      given-names: "C. S."
+  doi: "10.1101/2023.10.04.556561"
+  year: 2026
+  journal: "bioRxiv"

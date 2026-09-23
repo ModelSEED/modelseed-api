@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from typing import Any, Iterable
+from typing import Iterable
 
 # IDs for essential cofactors used in the biomass-cofactor check.
 ESSENTIAL_COFACTOR_IDS = {

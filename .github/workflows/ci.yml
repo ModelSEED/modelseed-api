@@ -1,0 +1,34 @@
+# Runs the hermetic test suite (unit/routes/integration/e2e/mcp) on every
+# push and pull request. No external services or secrets required -- this
+# is what live-tests.yml deliberately does NOT cover (that workflow only
+# exercises tests/live/ against a deployed stack).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Hermetic test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev,modeling,mcp]"
+      - name: Run tests
+        run: pytest tests/unit tests/routes tests/integration tests/e2e tests/test_mcp tests/test_auth.py -v
+      - name: Lint
+        run: ruff check src/ tests/

@@ -110,7 +110,15 @@
     </div>
 
     <script>
-    const API = window.location.origin;
+    // Derive the API root from our own URL rather than the bare origin, so
+    // the demo works both when the app is served at the root
+    // (http://localhost:8000/demo/) and when it sits behind a path-prefixed
+    // reverse proxy (https://modelseed.org/PMS/demo/). Using
+    // window.location.origin alone drops the "/PMS" prefix and every API
+    // call 502s. Stripping the trailing "/demo..." segment yields the API
+    // root in both cases.
+    const API = (window.location.origin + window.location.pathname)
+        .replace(/\/demo(\/.*)?$/, '');
     let TOKEN = '';
     let USERNAME = '';
     let currentTab = 'models';
@@ -331,7 +339,7 @@
                 return;
             }
 
-            // Still running — show progress and poll again
+            // Still running: show progress and poll again
             const progress = job.progress || 'Working...';
             statusEl.innerHTML = `<div class="job-status running"><strong>Building model...</strong> ${esc(progress)}</div>`;
             setTimeout(() => pollBuildJob(jobId, outputPath, statusEl), 3000);

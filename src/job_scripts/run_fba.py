@@ -59,7 +59,8 @@ def main():
 
     store_dir = Path(args.job_store_dir)
     job_file = store_dir / f"{args.job_id}.json"
-    now = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    def now():
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Mark as in-progress
     update_job(job_file, {"status": "in-progress", "start_time": now()})
@@ -94,7 +95,7 @@ def main():
                     import cobra.io
                     cobra_model = cobra.io.model_from_dict(json.loads(raw))
                     cobra_model.objective = "bio1"
-                    print(f"Loaded cobra_model from workspace")
+                    print("Loaded cobra_model from workspace")
         except Exception:
             pass  # cobra_model not available, fall back to workspace format
 
@@ -149,11 +150,11 @@ def main():
                     ]],
                     "overwrite": 1,
                 })
-                print(f"Migrated: saved cobra_model to workspace")
+                print("Migrated: saved cobra_model to workspace")
             except Exception as _save_err:
                 print(f"Warning: could not save cobra_model: {_save_err}")
 
-            print(f"Loaded model via FBAModelBuilder (fallback)")
+            print("Loaded model via FBAModelBuilder (fallback)")
         else:
             # Still need model_obj for saving FBA study back to model
             model_path = f"{model_ref}/model"
@@ -177,7 +178,7 @@ def main():
                 model_obj = raw_data
             else:
                 model_obj = {}
-            print(f"Loaded model_obj for FBA study save-back")
+            print("Loaded model_obj for FBA study save-back")
 
         # Load and apply media constraints if specified
         def _resolve_media(ref):
@@ -238,7 +239,7 @@ def main():
                     cobra_model.medium = medium
                     print(f"Applied media: {len(medium)} exchange reactions open")
                 else:
-                    print(f"Warning: media had no matching exchange reactions")
+                    print("Warning: media had no matching exchange reactions")
             else:
                 print(f"Warning: could not parse media compounds from {ws_media_path}")
 

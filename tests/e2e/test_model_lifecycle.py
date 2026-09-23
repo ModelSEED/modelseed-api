@@ -9,7 +9,6 @@ import json
 
 import pytest
 
-from tests.integration.conftest import SAMPLE_MODEL
 
 pytestmark = pytest.mark.e2e
 

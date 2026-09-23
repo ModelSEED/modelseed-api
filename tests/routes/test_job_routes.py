@@ -80,7 +80,8 @@ class TestFBAJob:
 
 
 class TestMergeJob:
-    def test_dispatch(self, local_client, auth_headers):
+    def test_not_implemented(self, local_client, auth_headers):
+        """Merge is not yet implemented; the route returns 501 immediately (no job dispatched)."""
         resp = local_client.post(
             "/api/jobs/merge?skip_validation=true",
             json={
@@ -93,7 +94,7 @@ class TestMergeJob:
             },
             headers=auth_headers,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 501
 
 
 class TestManageJobs:

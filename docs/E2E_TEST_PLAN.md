@@ -4,7 +4,7 @@ A repeatable, layered live test suite that runs against the deployed stack (http
 
 `/plant` is excluded from the suite because that section of the live site isn't functional yet.
 
-The full design rationale is at `.claude/plans/parallel-napping-rabbit.md` (Part 2). This file is the operational reference — what to run, how to read results, how to add tests.
+This file is the operational reference: what to run, how to read results, how to add tests.
 
 ---
 

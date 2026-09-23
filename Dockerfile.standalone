@@ -35,15 +35,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /deps
 
-# Clone dependency repos. Using `--depth 1` keeps the image smaller by
-# skipping git history. Pin to specific commits later if reproducible
-# builds become important; HEAD of each branch is fine for now.
-RUN git clone --depth 1 --branch master https://github.com/Fxe/cobrakbase.git && \
-    git clone --depth 1 --branch main https://github.com/cshenry/ModelSEEDpy.git && \
-    git clone --depth 1 --branch main https://github.com/cshenry/KBUtilLib.git && \
-    git clone --depth 1 --branch main https://github.com/kbaseapps/cb_annotation_ontology_api.git && \
-    git clone --depth 1 --branch dev https://github.com/ModelSEED/ModelSEEDDatabase.git && \
-    git clone --depth 1 --branch main https://github.com/ModelSEED/ModelSEEDTemplates.git
+# Clone dependency repos, pinned to specific commits (not just branch
+# names) so a rebuild of this same Dockerfile later reproduces the exact
+# code archived under this release's DOI, even after upstream branches
+# move on. Each uses a shallow fetch-by-SHA (supported by GitHub's
+# uploadpack.allowReachableSHA1InWant) to keep image size down without
+# giving up pinning. Update these SHAs deliberately when bumping deps;
+# `git ls-remote <repo-url> refs/heads/<branch>` gets the latest.
+RUN pin_clone() { \
+        mkdir "$2" && cd "$2" && git init -q && \
+        git remote add origin "$1" && \
+        git fetch -q --depth 1 origin "$3" && \
+        git checkout -q FETCH_HEAD && cd ..; \
+    }; \
+    pin_clone https://github.com/Fxe/cobrakbase.git cobrakbase e7bbd3c37b96d44ac49b7b16dfa6fc08d355d4a7 && \
+    pin_clone https://github.com/cshenry/ModelSEEDpy.git ModelSEEDpy b758b44217bca756a5e07a70e986fbdfe73dd1b6 && \
+    pin_clone https://github.com/cshenry/KBUtilLib.git KBUtilLib 0f8480327b52b208ea8aa366b9c738576162d912 && \
+    pin_clone https://github.com/kbaseapps/cb_annotation_ontology_api.git cb_annotation_ontology_api 97f9525aec95390f43f8be88491f35bb11bd589c && \
+    pin_clone https://github.com/ModelSEED/ModelSEEDDatabase.git ModelSEEDDatabase f7527bced46ddcc78253883b97bddee4a584daeb && \
+    pin_clone https://github.com/ModelSEED/ModelSEEDTemplates.git ModelSEEDTemplates 22942996dacbb518cdd265b0993ca96c93a03ebd
 
 # Install dependency packages in the order they expect.
 # cobrakbase first (no deps on others), then ModelSEEDpy, then KBUtilLib.

@@ -1,6 +1,5 @@
 """Integration tests for ModelService with real LocalStorageService — data round-trip correctness."""
 
-import json
 from unittest.mock import patch
 
 import pytest

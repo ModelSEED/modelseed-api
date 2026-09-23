@@ -8,7 +8,6 @@ notes). Keeps the tests fast and free of solver/network dependencies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import pytest
 

@@ -20,7 +20,6 @@ yet know which one Vibhav's frontend uses — see `_auth_via_storage` below.
 from __future__ import annotations
 
 import os
-from typing import Iterator
 
 import pytest
 
@@ -36,7 +35,7 @@ def _get_playwright():  # noqa: D401
         from playwright.sync_api import sync_playwright
 
         return sync_playwright
-    except ImportError as exc:
+    except ImportError:
         pytest.skip(
             "playwright not installed. "
             "Run `pip install -e \".[dev,ui-tests]\"` and "

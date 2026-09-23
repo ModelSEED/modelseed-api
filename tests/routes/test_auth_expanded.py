@@ -1,7 +1,6 @@
 """Expanded auth tests — Bearer prefix, quotes, local mode bypass."""
 
 import pytest
-from unittest.mock import patch
 
 pytestmark = pytest.mark.integration
 

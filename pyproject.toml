@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "modelseed-api"
-version = "0.1.0"
+version = "1.0.0"
 description = "Modern REST API backend for the ModelSEED metabolic modeling platform"
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,10 +24,16 @@ dependencies = [
 
 [project.optional-dependencies]
 modeling = [
-    "kbutillib",
-    "modelseedpy>=0.4.0",
+    # Pinned to the specific forks + commits CLAUDE.md requires. Plain
+    # PyPI names would silently resolve to the wrong package: cobrakbase
+    # on PyPI is stuck at a broken 0.3.0, kbutillib isn't on PyPI at all,
+    # and modelseedpy on PyPI points at the org repo, not this fork.
+    # Bump the SHA deliberately (git ls-remote <url> refs/heads/<branch>)
+    # rather than tracking the branch, so installs stay reproducible.
+    "kbutillib @ git+https://github.com/cshenry/KBUtilLib.git@0f8480327b52b208ea8aa366b9c738576162d912",
+    "modelseedpy @ git+https://github.com/cshenry/ModelSEEDpy.git@b758b44217bca756a5e07a70e986fbdfe73dd1b6",
+    "cobrakbase @ git+https://github.com/Fxe/cobrakbase.git@e7bbd3c37b96d44ac49b7b16dfa6fc08d355d4a7",
     "cobra>=0.29.0",
-    "cobrakbase",
     "pymysql>=1.1.0",
 ]
 dev = [
@@ -69,6 +75,11 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Bare `pytest` must stay hermetic: exclude tests/live/ (marked "live" by
+# tests/live/conftest.py) so a plain run never makes real network calls to
+# production modelseed.org. Opt into the live suite explicitly, e.g.
+# `pytest -m live_smoke` (see docs/E2E_TEST_PLAN.md).
+addopts = "-m 'not live'"
 asyncio_mode = "auto"
 markers = [
     "unit: Pure function tests, no I/O",
