@@ -1,5 +1,7 @@
 # ModelSEED API
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22924803.svg)](https://doi.org/10.5281/zenodo.22924803)
+
 Modern REST API backend for the [ModelSEED](https://modelseed.org) metabolic modeling platform. Replaces the legacy Perl-based ProbModelSEED JSON-RPC service with a Python FastAPI application.
 
 The API handles model listing, reconstruction, gapfilling, FBA, biochemistry queries, and PATRIC workspace operations. Long-running jobs (model building, gapfilling, FBA) run as Celery tasks in production or as subprocesses in local development.
