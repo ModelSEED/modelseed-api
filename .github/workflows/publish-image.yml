@@ -147,7 +147,7 @@ jobs:
           curl -sf http://localhost:8000/openapi.json | grep -q '"/api/health"'
           curl -sf http://localhost:8000/docs | grep -q "url: '/openapi.json'"
           curl -sf http://localhost:8000/redoc | grep -q 'spec-url="/openapi.json"'
-          curl -sf http://localhost:8000/demo/ | grep -q "fetch(API + '/api/health')"
+          curl -sfL http://localhost:8000/demo/ | grep -q "fetch(API + '/api/health')"
           docker exec smoke python -c 'from modelseed_mcp.server import mcp; assert mcp.name == "ModelSEED"'
 
       - name: Verify local storage persists API-created data

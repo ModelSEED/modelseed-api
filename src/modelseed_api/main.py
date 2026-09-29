@@ -9,8 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from modelseed_api import __version__
@@ -138,7 +137,15 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-# Serve demo page at /demo
-_static_dir = Path(__file__).parent / "static"
-if _static_dir.is_dir():
-    app.mount("/demo", StaticFiles(directory=str(_static_dir), html=True), name="demo")
+# Serve the single-file demo through normal routes. Mounted ASGI sub-apps can
+# mis-handle root_path when an outer reverse proxy strips the URL prefix.
+_demo_file = Path(__file__).parent / "static" / "index.html"
+if _demo_file.is_file():
+
+    @app.get("/demo", include_in_schema=False)
+    async def demo_redirect():
+        return RedirectResponse(url=f"{settings.root_path}/demo/")
+
+    @app.get("/demo/", include_in_schema=False)
+    async def demo_page():
+        return FileResponse(_demo_file)

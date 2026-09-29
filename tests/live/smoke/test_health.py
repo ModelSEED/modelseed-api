@@ -42,3 +42,17 @@ def test_openapi_uses_deployment_prefix(
         assert f"{api_prefix}/openapi.json" in docs.text, (
             f"{page} does not load OpenAPI through {api_prefix or '/'}"
         )
+
+
+def test_demo_uses_deployment_prefix(
+    public_client: httpx.Client, target_env: TargetEnv
+) -> None:
+    """The development dashboard must load and call the prefixed API."""
+    demo = public_client.get("/demo/")
+    assert_status(demo, 200)
+    assert "ModelSEED API" in demo.text
+    assert "fetch(API + '/api/health')" in demo.text
+
+    api_prefix = httpx.URL(target_env.api_url).path.rstrip("/")
+    if api_prefix:
+        assert f"{api_prefix}/demo/" in str(demo.url)
