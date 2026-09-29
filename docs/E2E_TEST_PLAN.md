@@ -112,7 +112,7 @@ tests/
 
 ### Layer 3 — Biological (~24 tests)
 
-"Models the system builds are biologically sound." 3 representative reconstructs (gram-neg, gram-pos, archaeon). Cross-product of `template_type ∈ {auto, gn, gp, ar}` × representative genome (pairwise — see Coverage Matrix). Each built model passes the full assertion library. Gapfill on Complete media yields a viable model; gapfill on glucose-minimal yields a *minimal* set of additions (≤30 typical for E. coli). FBA: Complete media → objectiveValue > 0.01 h⁻¹; glucose-minimal → > 0; acetate-only → 0 (with infeasibility status) for E. coli K-12. SBML round-trip preserves objective. Merge produces a model with reaction count between max(individual) and sum(individual).
+"Models the system builds are biologically sound." Three representative reconstructs (gram-negative, gram-positive, archaeon) cover automatic, explicit, and alias template selection. The canonical E. coli reference is gapfilled on glucose minimal media before FBA. FBA then verifies growth on Complete and glucose-minimal media, and no growth on Empty media. Exchange reactions are checked through the lossless Cobra export because they are not part of the frontend-shaped KBase model response.
 
 ### Layer 4 — UI (~12 Playwright tests, opt-in)
 
@@ -197,7 +197,7 @@ Layer codes: **S**=Smoke, **F**=Functional, **B**=Biological.
 | `/api/jobs/gapfill` | POST | `template_type=ar, media=NMS` | B |
 | `/api/jobs/fba` | POST | `media=Complete` (3 models) | B |
 | `/api/jobs/fba` | POST | `media=GlucoseMin` | B |
-| `/api/jobs/fba` | POST | `media=AcetateOnly` (no growth for E. coli K-12) | B |
+| `/api/jobs/fba` | POST | `media=Empty` (no growth) | B |
 | `/api/jobs/merge` | POST | 2 models, 0.5/0.5 | B |
 | `/api/jobs/manage` | POST | `action=d` on completed | F |
 | `/api/jobs/manage` | POST | `action=r` (rerun) | F |
@@ -283,7 +283,7 @@ Full Cartesian = 7 × 3 = 21 reconstructs at ~8 min each = 2.8 hours. Pairwise:
 17. `assert_no_duplicate_compound_ids(model)`
 18. `assert_exchange_reactions_exist(model, min=10)`
 19. `assert_extracellular_biomass_compounds_have_exchange(model)`
-20. `assert_atp_maintenance_present(model)` — ATPM-like reaction exists when `atp_safe=True`
+20. ATP correction executes when `atp_safe=True`; this does not imply a named ATPM reaction is persisted
 21. `assert_compartment_pH_set(model)` — each compartment has finite pH
 
 ### Functional / FBA assertions

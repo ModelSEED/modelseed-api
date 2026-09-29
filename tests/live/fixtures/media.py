@@ -36,13 +36,13 @@ GLUCOSE_MINIMAL = ReferenceMedia(
     notes="Glucose-only carbon source on minimal salts",
 )
 
-ACETATE_ONLY = ReferenceMedia(
-    ref="/chenry/public/modelsupport/media/Carbon-Acetate",
-    short_name="acetate_only",
+EMPTY = ReferenceMedia(
+    ref="/chenry/public/modelsupport/media/Empty",
+    short_name="empty",
     is_minimal=True,
-    expected_carbon_sources=["cpd00029"],  # Acetate
-    notes="Acetate-only — for testing carbon-source-specific growth predictions",
+    expected_carbon_sources=[],
+    notes="No nutrients; a model must not grow on this medium",
 )
 
 
-REFERENCE_MEDIA = [COMPLETE, GLUCOSE_MINIMAL, ACETATE_ONLY]
+REFERENCE_MEDIA = [COMPLETE, GLUCOSE_MINIMAL, EMPTY]

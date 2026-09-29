@@ -354,21 +354,6 @@ def assert_extracellular_biomass_compounds_have_exchange(model: dict) -> None:
         )
 
 
-def assert_atp_maintenance_present(model: dict) -> None:
-    """20. The canonical ATP hydrolysis reaction is present when ATP-safe is enabled."""
-    candidates = [
-        r for r in _reactions(model)
-        if (r.get("id") or "").split("_", 1)[0] in {"ATPM", "rxn00062"}
-        or "maintenance" in (r.get("name") or "").lower()
-        or "atp phosphohydrolase" in (r.get("name") or "").lower()
-    ]
-    if not candidates:
-        raise AssertionError(
-            f"{_ref(model)}: no ATP maintenance reaction found "
-            "(searched for ATPM/rxn00062 and ATP maintenance names)"
-        )
-
-
 def assert_compartment_pH_set(model: dict) -> None:
     """21. Each compartment has a finite numeric pH."""
     bad = []

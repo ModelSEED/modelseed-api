@@ -23,7 +23,12 @@ from tests.live.assertions.api import (
     assert_status,
     poll_job_until_done,
 )
-from tests.live.fixtures.genomes import TEMPLATE_GENOME_PAIRS, ReferenceGenome
+from tests.live.fixtures.genomes import (
+    ECOLI_K12_MG1655,
+    TEMPLATE_GENOME_PAIRS,
+    ReferenceGenome,
+)
+from tests.live.fixtures.media import GLUCOSE_MINIMAL
 
 pytestmark = [
     pytest.mark.requires_token,
@@ -48,7 +53,8 @@ def test_reconstruct_template_genome_pairwise(
     """
     output_path = f"{workspace_sandbox}{genome.short_name}_{template_type}"
 
-    # Submit
+    # Gapfill the canonical E. coli model used by the downstream FBA matrix.
+    gapfill = template_type == "auto" and genome == ECOLI_K12_MG1655
     submit = live_client.post(
         "/api/jobs/reconstruct",
         params={"skip_validation": "true"},
@@ -56,7 +62,8 @@ def test_reconstruct_template_genome_pairwise(
             "genome": genome.genome_id,
             "template_type": template_type,
             "atp_safe": True,
-            "gapfill": False,
+            "gapfill": gapfill,
+            "media": GLUCOSE_MINIMAL.ref if gapfill else None,
             "output_path": output_path,
         },
         timeout=30.0,
@@ -99,10 +106,6 @@ def test_reconstruct_template_genome_pairwise(
     )
     assert_status(cobra_resp, 200)
     bio.assert_exchange_reactions_exist({
-        "ref": output_path,
-        "reactions": cobra_resp.json().get("reactions", []),
-    })
-    bio.assert_atp_maintenance_present({
         "ref": output_path,
         "reactions": cobra_resp.json().get("reactions", []),
     })

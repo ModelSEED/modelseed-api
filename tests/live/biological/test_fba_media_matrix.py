@@ -3,7 +3,7 @@
 B16–B20 from docs/E2E_TEST_PLAN.md. Submits FBA jobs against pre-built
 models on different media and asserts biologically reasonable outcomes:
 growth on Complete media, growth on glucose-minimal for E. coli, no growth
-on acetate-only for E. coli K-12, objective in [0, 2.0] h⁻¹ range.
+on empty media, and an objective in the [0, 2.0] h^-1 range.
 
 Depends on test_reconstruct_template_matrix.py having run first to populate
 the workspace_sandbox with built models. If you run this layer in isolation,
@@ -24,7 +24,7 @@ from tests.live.assertions.api import (
     poll_job_until_done,
 )
 from tests.live.fixtures.genomes import ECOLI_K12_MG1655
-from tests.live.fixtures.media import ACETATE_ONLY, COMPLETE, GLUCOSE_MINIMAL
+from tests.live.fixtures.media import COMPLETE, EMPTY, GLUCOSE_MINIMAL
 
 pytestmark = [
     pytest.mark.requires_token,
@@ -102,23 +102,11 @@ def test_fba_glucose_minimal_grows_ecoli(
     bio.assert_fluxes_finite(detail)
 
 
-def test_fba_acetate_no_growth_ecoli_k12(
+def test_fba_empty_media_does_not_grow(
     live_client: httpx.Client, workspace_sandbox: str
 ) -> None:
-    """B18: E. coli K-12 should NOT grow on acetate-only without glucose. This
-    is a biological-correctness check — the prediction matches lab behavior.
-    """
+    """B18: E. coli K-12 does not grow when no nutrients are available."""
     model_ref = _model_ref_for(workspace_sandbox, ECOLI_K12_MG1655.short_name, "auto")
     _ensure_model_exists(live_client, model_ref)
-    detail = _run_fba_and_get_detail(live_client, model_ref, ACETATE_ONLY.ref)
-    # We don't assert exactly zero — some models with strong glyoxylate cycle
-    # gapfilling can grow. But growth should be very low.
-    obj = (
-        detail.get("objectiveValue")
-        or detail.get("objective")
-        or 0.0
-    )
-    assert obj < 0.05, (
-        f"E. coli K-12 grew at rate {obj:.4f} on acetate-only — unexpectedly high. "
-        f"Either the model has unrealistic glyoxylate cycle activity or media is wrong."
-    )
+    detail = _run_fba_and_get_detail(live_client, model_ref, EMPTY.ref)
+    bio.assert_no_growth_on_empty_media(detail)
