@@ -16,9 +16,9 @@
 # total size ~1.5-2 GB. Larger than typical web-app images but eliminates
 # the need for separate data downloads.
 #
-# Defaults to local-storage mode (no PATRIC account needed). All ANL-
-# specific endpoints (workspace, RAST jobs, RAST genome) cleanly return
-# 503 unless their env vars are configured. See docs/STANDALONE.md.
+# Defaults to local-storage mode (no PATRIC account needed). Workspace routes
+# use that local backend; hosted-only RAST integrations return 503 unless their
+# environment variables are configured. See docs/STANDALONE.md.
 
 FROM python:3.11-slim
 
@@ -69,8 +69,9 @@ COPY src/ /app/src/
 COPY data/ /app/data/
 COPY pyproject.toml /app/
 
-# Install modelseed-api with the modeling+celery extras.
-RUN pip install --no-cache-dir -e ".[modeling,celery]"
+# Standalone jobs use subprocesses, so Redis/Celery is intentionally omitted.
+# Include MCP because the same image is the documented local AI interface.
+RUN pip install --no-cache-dir -e ".[modeling,mcp]"
 
 # numpy/scikit-learn occasionally end up at mismatched ABI versions
 # after the editable installs; force-reinstall to a coherent pair.

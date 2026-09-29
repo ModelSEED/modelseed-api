@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 import modelseed_mcp.tools.media as media_mod
 
-list_media = media_mod.list_media.fn
-get_media = media_mod.get_media.fn
+from tests.test_mcp import unwrap_tool
+
+list_media = unwrap_tool(media_mod.list_media)
+get_media = unwrap_tool(media_mod.get_media)
 
 MOCK_MEDIA = {
     "name": "TestMedia",

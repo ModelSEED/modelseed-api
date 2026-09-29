@@ -230,9 +230,16 @@ git clone https://github.com/kbaseapps/cb_annotation_ontology_api.git
 
 ### 2a. Docker (recommended)
 
+From the `modelseed-api` checkout:
+
 ```bash
-docker compose -f modelseed-api/docker-compose.yml up --build
+docker compose up --build
 ```
+
+This public Compose profile is standalone: it uses `Dockerfile.standalone`, local
+filesystem storage, and no Workspace, Redis, RAST database, NFS, or ANL network.
+The ModelSEED team keeps its hosted deployment configuration separately from the
+public application repository.
 
 ### 2b. Manual
 
@@ -412,8 +419,8 @@ All settings load from environment variables with the `MODELSEED_` prefix or fro
 | `MODELSEED_WORKSPACE_TIMEOUT` | `1800` | Workspace HTTP request timeout (seconds) |
 | `MODELSEED_PUBLIC_MEDIA_PATH` | `/chenry/public/modelsupport/media` | Workspace path for public media |
 | `MODELSEED_USE_CELERY` | `false` | Use Celery+Redis for job dispatch |
-| `MODELSEED_CELERY_BROKER_URL` | `redis://bioseed_redis:6379/10` | Celery Redis broker URL |
-| `MODELSEED_CELERY_RESULT_BACKEND` | `redis://bioseed_redis:6379/10` | Celery Redis result backend URL |
+| `MODELSEED_CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery Redis broker URL when Celery is enabled |
+| `MODELSEED_CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery Redis result backend when Celery is enabled |
 | `MODELSEED_JOB_STORE_DIR` | `/tmp/modelseed-jobs` | Directory for job state files |
 | `MODELSEED_RAST_JOBS_DIR` | (empty) | Filesystem path to RAST job dirs (`/api/rast/genome`). Leave empty to disable. |
 | `MODELSEED_RAST_DB_HOST` | (empty) | RAST job database host (`/api/rast/jobs`). Leave empty to disable. |

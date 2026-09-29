@@ -129,7 +129,20 @@ class TestWorkspaceModelToCobra:
         assert ex.upper_bound == 1000
 
     def test_empty_model(self):
-        model = _model_obj_to_cobra({})
+        model = _model_obj_to_cobra({
+            "id": "empty",
+            "name": "Empty model",
+            "source": "ModelSEED",
+            "source_id": "empty",
+            "type": "GenomeScale",
+            "genome_ref": "",
+            "modelcompartments": [],
+            "modelcompounds": [],
+            "modelreactions": [],
+            "biomasses": [],
+            "gapfillings": [],
+            "gapgens": [],
+        })
         assert isinstance(model, cobra.Model)
         assert len(model.reactions) == 0
         assert len(model.metabolites) == 0

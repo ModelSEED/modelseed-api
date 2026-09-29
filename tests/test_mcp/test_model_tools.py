@@ -4,13 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import modelseed_mcp.tools.models as models_mod
 
-# Access underlying functions from FunctionTool wrappers
-list_models = models_mod.list_models.fn
-get_model = models_mod.get_model.fn
-delete_model = models_mod.delete_model.fn
-copy_model = models_mod.copy_model.fn
-export_model = models_mod.export_model.fn
-edit_model = models_mod.edit_model.fn
+from tests.test_mcp import unwrap_tool
+
+list_models = unwrap_tool(models_mod.list_models)
+get_model = unwrap_tool(models_mod.get_model)
+delete_model = unwrap_tool(models_mod.delete_model)
+copy_model = unwrap_tool(models_mod.copy_model)
+export_model = unwrap_tool(models_mod.export_model)
+edit_model = unwrap_tool(models_mod.edit_model)
 
 MOCK_MODEL_LIST = [
     {"id": "model1", "name": "E. coli", "num_reactions": 100, "num_genes": 50},

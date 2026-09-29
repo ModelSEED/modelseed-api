@@ -4,12 +4,13 @@ from unittest.mock import patch
 
 import modelseed_mcp.tools.jobs as jobs_mod
 
-# Access underlying functions from FunctionTool wrappers
-build_model = jobs_mod.build_model.fn
-gapfill_model = jobs_mod.gapfill_model.fn
-run_fba = jobs_mod.run_fba.fn
-merge_models = jobs_mod.merge_models.fn
-check_job = jobs_mod.check_job.fn
+from tests.test_mcp import unwrap_tool
+
+build_model = unwrap_tool(jobs_mod.build_model)
+gapfill_model = unwrap_tool(jobs_mod.gapfill_model)
+run_fba = unwrap_tool(jobs_mod.run_fba)
+merge_models = unwrap_tool(jobs_mod.merge_models)
+check_job = unwrap_tool(jobs_mod.check_job)
 
 PATCH_DISPATCHER = "modelseed_api.jobs.dispatcher.JobDispatcher"
 PATCH_STORE = "modelseed_api.jobs.store.JobStore"

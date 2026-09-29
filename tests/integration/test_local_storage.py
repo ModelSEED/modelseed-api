@@ -9,6 +9,27 @@ from modelseed_api.services.workspace_service import WorkspaceError
 pytestmark = pytest.mark.integration
 
 
+# ── path confinement ─────────────────────────────────────────────────
+
+
+class TestPathConfinement:
+    @pytest.mark.parametrize("path", ["/../outside", "/local/../../outside"])
+    def test_rejects_parent_traversal(self, local_storage, path):
+        with pytest.raises(WorkspaceError) as exc_info:
+            local_storage.get({"objects": [path]})
+        assert exc_info.value.code == 400
+
+    def test_rejects_symlink_escape(self, local_storage, local_data_dir, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.json").write_text('{"secret": true}')
+        (local_data_dir / "escape").symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(WorkspaceError) as exc_info:
+            local_storage.get({"objects": ["/escape/secret"]})
+        assert exc_info.value.code == 400
+
+
 # ── ls ───────────────────────────────────────────────────────────────
 
 

@@ -4,11 +4,12 @@ from unittest.mock import patch
 
 import modelseed_mcp.tools.biochem as biochem_mod
 
-# Access underlying functions from FunctionTool wrappers
-search_compounds = biochem_mod.search_compounds.fn
-search_reactions = biochem_mod.search_reactions.fn
-get_compound = biochem_mod.get_compound.fn
-get_reaction = biochem_mod.get_reaction.fn
+from tests.test_mcp import unwrap_tool
+
+search_compounds = unwrap_tool(biochem_mod.search_compounds)
+search_reactions = unwrap_tool(biochem_mod.search_reactions)
+get_compound = unwrap_tool(biochem_mod.get_compound)
+get_reaction = unwrap_tool(biochem_mod.get_reaction)
 
 MOCK_COMPOUNDS = [
     {"id": "cpd00027", "name": "D-Glucose", "formula": "C6H12O6", "charge": 0},

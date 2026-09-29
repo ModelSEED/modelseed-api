@@ -77,7 +77,7 @@ jobs:
           MODELSEED_TEST_ENV: ${{ inputs.target_env || 'production' }}
         run: |
           mkdir -p tests/live/reports
-          pytest tests/live/smoke/ \
+          pytest tests/live/smoke/ -m live_smoke \
             --html=tests/live/reports/smoke.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/smoke.json
       - name: Upload report
@@ -115,7 +115,7 @@ jobs:
             echo "::warning::MODELSEED_TEST_TOKEN secret not set — functional tests will skip auth-required cases"
           fi
           mkdir -p tests/live/reports
-          pytest tests/live/functional/ \
+          pytest tests/live/functional/ -m live_functional \
             --html=tests/live/reports/functional.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/functional.json
       - name: Upload report
@@ -153,7 +153,7 @@ jobs:
           MODELSEED_TEST_UI_HEADLESS: '1'
         run: |
           mkdir -p tests/live/reports
-          pytest tests/live/ui/ \
+          pytest tests/live/ui/ -m live_ui \
             --html=tests/live/reports/ui.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/ui.json
       - name: Upload report
@@ -191,7 +191,7 @@ jobs:
             exit 1
           fi
           mkdir -p tests/live/reports
-          pytest tests/live/biological/ -n 4 \
+          pytest tests/live/biological/ -m live_biological -n 4 \
             --html=tests/live/reports/biological.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/biological.json
       - name: Upload report

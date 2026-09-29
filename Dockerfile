@@ -10,7 +10,9 @@
 #     ModelSEEDTemplates/
 #     cb_annotation_ontology_api/
 #
-# Build: cd modelseed && docker compose -f modelseed-api/docker-compose.yml up --build
+# This sibling-checkout image is used by the hosted deployment definition in
+# the private operations repository. Public users should use
+# Dockerfile.standalone or the root docker-compose.yml instead.
 
 FROM python:3.11-slim
 

@@ -1,86 +1,20 @@
 services:
-  api:
+  modelseed-api:
     build:
-      context: ..
-      dockerfile: modelseed-api/Dockerfile
-    container_name: modelseed-api-api-1
+      context: .
+      dockerfile: Dockerfile.standalone
+    image: modelseed-api:local
     ports:
-      - "3004:8000"
+      - "8000:8000"
     volumes:
-      - modelseed-jobs:/tmp/modelseed-jobs
-      # Read-only NFS bind for RAST job filesystem. Mounting /vol (not the
-      # /vol/rast-prod/jobs symlink) so the container can resolve through
-      # the symlink to the actual /vol/rast-prod-jobs-* shards. Read-only
-      # at three layers: NFS server export, host kernel mount, and :ro flag.
-      - /vol:/vol:ro
-    environment:
-      MODELSEED_USE_CELERY: "true"
-      MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
-      MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
-      MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
-      # Path prefix behind the nginx reverse proxy at modelseed.org. Without
-      # this, /docs and /redoc fetch /openapi.json instead of /PMS/openapi.json
-      # and render blank. Set MODELSEED_ROOT_PATH=/PMS in the host .env.
-      MODELSEED_ROOT_PATH: "${MODELSEED_ROOT_PATH:-}"
-      # RAST DB credentials (chestnut MySQL). Values come from the host's
-      # .env file in the docker compose run directory. Production sets
-      # these to connect to RastProdJobCache + WebAppBackend2 on chestnut.
-      MODELSEED_RAST_DB_HOST: "${MODELSEED_RAST_DB_HOST:-}"
-      MODELSEED_RAST_DB_PORT: "${MODELSEED_RAST_DB_PORT:-3306}"
-      MODELSEED_RAST_DB_USER: "${MODELSEED_RAST_DB_USER:-}"
-      MODELSEED_RAST_DB_PASSWORD: "${MODELSEED_RAST_DB_PASSWORD:-}"
-      MODELSEED_RAST_DB_NAME: "${MODELSEED_RAST_DB_NAME:-RastProdJobCache}"
+      - modelseed-data:/data/modelseed
     restart: unless-stopped
-    networks:
-      - default
-      - bioseed_network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
-      interval: 60s
+      interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  worker:
-    build:
-      context: ..
-      dockerfile: modelseed-api/Dockerfile
-    container_name: celery_modelseed
-    command: ["python", "-m", "modelseed_api.jobs.celery_app"]
-    volumes:
-      - modelseed-jobs:/tmp/modelseed-jobs
-      # Same RAST NFS bind as the api service (worker calls RastService too,
-      # for the reconstruct task that uses rast_job_id).
-      - /vol:/vol:ro
-    environment:
-      MODELSEED_USE_CELERY: "true"
-      MODELSEED_CELERY_BROKER_URL: "redis://bioseed_redis:6379/10"
-      MODELSEED_CELERY_RESULT_BACKEND: "redis://bioseed_redis:6379/10"
-      MODELSEED_RAST_JOBS_DIR: "/vol/rast-prod/jobs"
-      # Worker doesn't currently call list_jobs but symmetry keeps
-      # container parity simple; harmless if unused.
-      MODELSEED_RAST_DB_HOST: "${MODELSEED_RAST_DB_HOST:-}"
-      MODELSEED_RAST_DB_PORT: "${MODELSEED_RAST_DB_PORT:-3306}"
-      MODELSEED_RAST_DB_USER: "${MODELSEED_RAST_DB_USER:-}"
-      MODELSEED_RAST_DB_PASSWORD: "${MODELSEED_RAST_DB_PASSWORD:-}"
-      MODELSEED_RAST_DB_NAME: "${MODELSEED_RAST_DB_NAME:-RastProdJobCache}"
-    restart: unless-stopped
-    # Give a long-running task (reconstruct + gapfill ~6-10 min, FBA ~10 s)
-    # time to finish on SIGTERM before docker SIGKILLs.  Without this,
-    # Celery's prefork pool gets killed mid-LP-solve and acks_late can't
-    # reliably requeue (Layer D test finding, 2026-05-04).
-    stop_grace_period: 15m
-    networks:
-      - default
-      - bioseed_network
-    depends_on:
-      - api
-
-networks:
-  default:
-    driver: bridge
-  bioseed_network:
-    external: true
-
 volumes:
-  modelseed-jobs:
+  modelseed-data:

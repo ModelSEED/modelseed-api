@@ -1,11 +1,19 @@
 # Running modelseed-api standalone
 
-This guide is for someone who wants to use modelseed-api **without** the production ANL setup (no PATRIC account, no chestnut MySQL, no NFS-mounted RAST jobs). The standalone image is self-contained: pull it, run it, hit `localhost:8000`.
+This guide is for someone who wants to use modelseed-api without the hosted ModelSEED infrastructure (no PATRIC account, Redis, RAST database, or mounted RAST job filesystem). The standalone image is self-contained: pull it, run it, hit `localhost:8000`.
 
 ## Quick start
 
+Run the published image:
+
 ```bash
 docker run -p 8000:8000 ghcr.io/modelseed/modelseed-api:latest
+```
+
+Or build and run the standalone profile from a source checkout:
+
+```bash
+docker compose up --build
 ```
 
 That's it. The image:
@@ -52,8 +60,8 @@ Now models, gapfill solutions, FBA results, and uploaded media live in `~/.model
 | `/api/jobs/gapfill` | yes | pure local compute |
 | `/api/jobs/fba` | yes | pure local compute |
 | `/api/jobs/merge` | no | not yet implemented on any deployment; always returns HTTP 501 (see `docs/KNOWN_GAPS.md`) |
-| `/api/workspace/*` | only with PATRIC | proxies the PATRIC Workspace Service |
-| `/api/rast/jobs` | only on ANL setup | needs chestnut MySQL access |
+| `/api/workspace/*` | yes | operates on the same local filesystem backend; no PATRIC account required |
+| `/api/rast/jobs` | only on ANL setup | needs the RAST job database |
 | `/api/rast/genome` | only on ANL setup | needs `/vol/rast-prod/jobs` filesystem mount |
 
 The ANL-only endpoints return `503 RAST integration not configured for this deployment` (or similar) when their env vars aren't set. They don't crash and don't break the rest of the API.
@@ -168,4 +176,4 @@ First request after container start may take ~10s while the biochemistry databas
 
 ## Source code
 
-This image is built from [ModelSEED/modelseed-api](https://github.com/ModelSEED/modelseed-api), specifically `Dockerfile.standalone`. The build clones sibling repos (`cshenry/ModelSEEDpy`, `cshenry/KBUtilLib`, `Fxe/cobrakbase`, `ModelSEED/ModelSEEDDatabase` `dev` branch, `ModelSEED/ModelSEEDTemplates`) at build time, so the image always reflects HEAD of those repos at the time the image was built. For reproducible builds against pinned commits, pin the `--branch <ref>` in `Dockerfile.standalone` to specific commit SHAs.
+This image is built from [ModelSEED/modelseed-api](https://github.com/ModelSEED/modelseed-api), specifically `Dockerfile.standalone`. The Dockerfile fetches ModelSEEDpy, KBUtilLib, cobrakbase, ModelSEEDDatabase, ModelSEEDTemplates, and cb_annotation_ontology_api at exact commit SHAs. Dependency updates are therefore explicit and reproducible rather than following moving branch heads.

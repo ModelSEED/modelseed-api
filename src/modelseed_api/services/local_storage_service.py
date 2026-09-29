@@ -39,7 +39,7 @@ class LocalStorageService:
 
     def __init__(self, token: str, data_dir: str):
         self.token = token
-        self.data_dir = Path(os.path.expanduser(data_dir))
+        self.data_dir = Path(os.path.expanduser(data_dir)).resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._seed_bundled_media()
 
@@ -69,10 +69,11 @@ class LocalStorageService:
     # ── helpers ──────────────────────────────────────────────────────
 
     def _ws_path_to_fs(self, ws_path: str) -> Path:
-        """Convert workspace path like '/user/modelseed/model1' to local fs path."""
-        # Strip leading/trailing slashes, normalize
-        clean = ws_path.strip("/")
-        return self.data_dir / clean
+        """Convert a workspace path to a filesystem path confined to data_dir."""
+        path = (self.data_dir / ws_path.strip("/")).resolve()
+        if not path.is_relative_to(self.data_dir):
+            raise WorkspaceError("Path escapes local storage root", code=400)
+        return path
 
     def _fs_to_ws_path(self, fs_path: Path) -> str:
         """Convert local fs path back to workspace-style path."""

@@ -35,6 +35,13 @@ class TestWorkspaceGet:
         }, headers=auth_headers)
         assert resp.status_code == 200
 
+    def test_get_rejects_path_outside_local_storage(self, local_client, auth_headers):
+        resp = local_client.post("/api/workspace/get", json={
+            "objects": ["/../../etc/passwd"],
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+        assert "escapes local storage root" in resp.json()["detail"]
+
 
 class TestWorkspaceCreate:
     def test_create_folder(self, local_client, auth_headers):

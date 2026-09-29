@@ -31,7 +31,9 @@ def _get_ws(user: AuthUser):
 
 def _handle_ws_error(e: WorkspaceError):
     msg = e.message.lower()
-    if "permission" in msg or "not authorized" in msg or e.code == 403:
+    if e.code == 400:
+        status = 400
+    elif "permission" in msg or "not authorized" in msg or e.code == 403:
         status = 403
     elif "not found" in msg or "does not exist" in msg or e.code == 404:
         status = 404

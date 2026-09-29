@@ -8,14 +8,45 @@ import pytest
 SAMPLE_MODEL = {
     "id": "test_model",
     "name": "Test Model",
+    "source": "ModelSEED",
+    "source_id": "test_model",
+    "type": "GenomeScale",
     "genome_ref": "/local/genomes/83333.1/genome||",
     "modelcompartments": [
-        {"id": "c0", "label": "Cytosol", "pH": 7.0, "potential": 0},
-        {"id": "e0", "label": "Extracellular", "pH": 7.0, "potential": 0},
+        {
+            "id": "c0",
+            "compartment_ref": "~/compartments/id/c",
+            "compartmentIndex": 0,
+            "label": "Cytosol",
+            "pH": 7.0,
+            "potential": 0,
+        },
+        {
+            "id": "e0",
+            "compartment_ref": "~/compartments/id/e",
+            "compartmentIndex": 0,
+            "label": "Extracellular",
+            "pH": 7.0,
+            "potential": 0,
+        },
     ],
     "modelcompounds": [
-        {"id": "cpd00001_c0", "name": "H2O", "formula": "H2O", "charge": 0},
-        {"id": "cpd00002_c0", "name": "ATP", "formula": "C10H12N5O13P3", "charge": -4},
+        {
+            "id": "cpd00001_c0",
+            "name": "H2O",
+            "formula": "H2O",
+            "charge": 0,
+            "modelcompartment_ref": "~/modelcompartments/id/c0",
+            "compound_ref": "~/compounds/id/cpd00001",
+        },
+        {
+            "id": "cpd00002_c0",
+            "name": "ATP",
+            "formula": "C10H12N5O13P3",
+            "charge": -4,
+            "modelcompartment_ref": "~/modelcompartments/id/c0",
+            "compound_ref": "~/compounds/id/cpd00002",
+        },
     ],
     "modelreactions": [
         {
@@ -41,6 +72,7 @@ SAMPLE_MODEL = {
         }
     ],
     "gapfillings": [],
+    "gapgens": [],
     "fbaFormulations": [],
     "fba_studies": [],
 }

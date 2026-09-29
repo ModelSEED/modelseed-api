@@ -50,10 +50,10 @@ class Settings(BaseSettings):
     job_scripts_dir: str = "src/job_scripts"
     job_store_dir: str = "/tmp/modelseed-jobs"
 
-    # Celery (bioseed scheduler)
-    celery_broker_url: str = "redis://bioseed_redis:6379/10"
-    celery_result_backend: str = "redis://bioseed_redis:6379/10"
-    use_celery: bool = False  # Set True in production to use bioseed scheduler
+    # Celery (optional; standalone mode uses subprocess jobs)
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/0"
+    use_celery: bool = False
 
     # RAST legacy database (optional, leave empty to disable /api/rast/jobs)
     rast_db_host: str = ""

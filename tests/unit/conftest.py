@@ -9,10 +9,27 @@ def minimal_model_obj():
     return {
         "id": "test_model",
         "name": "Test Organism Model",
+        "source": "ModelSEED",
+        "source_id": "test_model",
+        "type": "GenomeScale",
         "genome_ref": "/local/genomes/83333.1/genome||",
         "modelcompartments": [
-            {"id": "c0", "label": "Cytosol", "pH": 7.0, "potential": 0},
-            {"id": "e0", "label": "Extracellular", "pH": 7.0, "potential": 0},
+            {
+                "id": "c0",
+                "compartment_ref": "~/compartments/id/c",
+                "compartmentIndex": 0,
+                "label": "Cytosol",
+                "pH": 7.0,
+                "potential": 0,
+            },
+            {
+                "id": "e0",
+                "compartment_ref": "~/compartments/id/e",
+                "compartmentIndex": 0,
+                "label": "Extracellular",
+                "pH": 7.0,
+                "potential": 0,
+            },
         ],
         "modelcompounds": [
             {
@@ -83,9 +100,13 @@ def minimal_model_obj():
                 "modelReactionProteins": [
                     {
                         "note": "",
+                        "complex_ref": "~/template/complexes/id/cpx00001",
                         "modelReactionProteinSubunits": [
                             {
                                 "role": "ATP synthase alpha",
+                                "triggering": 1,
+                                "optionalSubunit": 0,
+                                "note": "",
                                 "feature_refs": [
                                     "~/genome/features/id/fig|83333.1.peg.1"
                                 ],
@@ -113,15 +134,22 @@ def minimal_model_obj():
                 "modelReactionProteins": [
                     {
                         "note": "",
+                        "complex_ref": "~/template/complexes/id/cpx00002",
                         "modelReactionProteinSubunits": [
                             {
                                 "role": "subunit A",
+                                "triggering": 1,
+                                "optionalSubunit": 0,
+                                "note": "",
                                 "feature_refs": [
                                     "~/genome/features/id/fig|83333.1.peg.2"
                                 ],
                             },
                             {
                                 "role": "subunit B",
+                                "triggering": 1,
+                                "optionalSubunit": 0,
+                                "note": "",
                                 "feature_refs": [
                                     "~/genome/features/id/fig|83333.1.peg.3"
                                 ],
@@ -171,6 +199,7 @@ def minimal_model_obj():
             }
         ],
         "gapfillings": [],
+        "gapgens": [],
         "fbaFormulations": [],
         "fba_studies": [],
     }
