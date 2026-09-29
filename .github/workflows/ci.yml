@@ -20,8 +20,16 @@ jobs:
     name: Hermetic test suite
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      MODELSEED_MODELSEED_DB_PATH: ${{ github.workspace }}/ModelSEEDDatabase
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned ModelSEED database
+        uses: actions/checkout@v4
+        with:
+          repository: ModelSEED/ModelSEEDDatabase
+          ref: f7527bced46ddcc78253883b97bddee4a584daeb
+          path: ModelSEEDDatabase
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
