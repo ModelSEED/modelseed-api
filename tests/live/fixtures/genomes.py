@@ -32,7 +32,7 @@ ECOLI_K12_MG1655 = ReferenceGenome(
 )
 
 BSUBTILIS_168 = ReferenceGenome(
-    genome_id="224308.1",
+    genome_id="224308.534",
     short_name="bsubtilis_168",
     expected_template="gp",
     expected_min_reactions=900,
@@ -40,7 +40,7 @@ BSUBTILIS_168 = ReferenceGenome(
 )
 
 MJANNASCHII_DSM2661 = ReferenceGenome(
-    genome_id="243232.1",
+    genome_id="243232.20",
     short_name="mjannaschii",
     expected_template="ar",
     expected_min_reactions=500,

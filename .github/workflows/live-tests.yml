@@ -186,7 +186,7 @@ jobs:
             exit 1
           fi
           mkdir -p tests/live/reports
-          pytest tests/live/biological/ -m live_biological -n 4 --tb=short \
+          pytest tests/live/biological/ -m live_biological -n 4 --timeout=1800 --tb=short \
             --html=tests/live/reports/biological.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/biological.json
       - name: Upload report

@@ -233,8 +233,8 @@ Full Cartesian = 7 × 3 = 21 reconstructs at ~8 min each = 2.8 hours. Pairwise:
 | # | template_type | genome | rationale |
 |---|---|---|---|
 | 1 | `auto` | E. coli K-12 MG1655 (511145.12) | gn auto-detect |
-| 2 | `auto` | B. subtilis 168 (224308.1) | gp auto-detect |
-| 3 | `auto` | M. jannaschii DSM 2661 (243232.1) | archaea auto-detect |
+| 2 | `auto` | B. subtilis 168 (224308.534) | gp auto-detect |
+| 3 | `auto` | M. jannaschii DSM 2661 (243232.20) | archaea auto-detect |
 | 4 | `gn` | E. coli K-12 MG1655 | explicit gn |
 | 5 | `gp` | B. subtilis 168 | explicit gp |
 | 6 | `ar` | M. jannaschii | explicit ar |
