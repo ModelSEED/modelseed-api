@@ -378,11 +378,14 @@ def _apply_media(cobra_model, ms_media):
         exc_rxn_id = f"EX_{cpd.id}_e0"
         if exc_rxn_id in rxn_ids:
             medium[exc_rxn_id] = cpd.maxFlux or 1000.0
-    cobra_model.medium = medium
     if medium:
+        cobra_model.medium = medium
         logger.info("Applied media: %d exchange reactions open", len(medium))
+    elif ms_media.mediacompounds:
+        logger.warning("Media had no matching exchange reactions — running with default bounds")
     else:
-        logger.info("Applied empty media: all exchange reactions closed")
+        cobra_model.medium = {}
+        logger.info("Applied Empty media: all exchanges closed")
 
 
 def _fix_gapfilling_metadata(ws_data: dict, media_workspace_ref: str | None) -> None:
