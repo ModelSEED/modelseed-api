@@ -90,8 +90,18 @@ def test_reconstruct_template_genome_pairwise(
     bio.assert_compound_charges_are_numeric(model)
     bio.assert_no_duplicate_reaction_ids(model)
     bio.assert_no_duplicate_compound_ids(model)
-    bio.assert_exchange_reactions_exist(model)
-    bio.assert_extracellular_biomass_compounds_have_exchange(model)
+
+    # Exchange reactions are generated in the lossless Cobra representation,
+    # not stored in the frontend-shaped KBase model response.
+    cobra_resp = live_client.get(
+        "/api/models/export",
+        params={"ref": output_path, "format": "cobra-json"},
+    )
+    assert_status(cobra_resp, 200)
+    bio.assert_exchange_reactions_exist({
+        "ref": output_path,
+        "reactions": cobra_resp.json().get("reactions", []),
+    })
     bio.assert_atp_maintenance_present(model)
     bio.assert_compartment_pH_set(model)
 

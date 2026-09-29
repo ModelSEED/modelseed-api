@@ -333,8 +333,8 @@ pytest -m live_smoke
 # Functional (15 min)
 pytest -m "live_smoke or live_functional"
 
-# Biological (60–90 min, parallel)
-pytest -m live_biological -n 4
+# Biological (60-90 min; serial because later FBA tests use reconstructed models)
+pytest -m live_biological --timeout=1800
 
 # Everything
 pytest -m live --html=tests/live/reports/full.html --json-report
