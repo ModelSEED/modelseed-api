@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -121,6 +122,10 @@ def live_token() -> str:
     # auth dependency does, so what we send matches what production accepts.
     token = token.removeprefix("Bearer ").strip('"').strip("'")
     _SECRETS_TO_REDACT.add(token)
+    fields = dict(part.split("=", 1) for part in token.split("|") if "=" in part)
+    expiry = fields.get("expiry")
+    if expiry and expiry.isdigit() and int(expiry) <= int(time.time()):
+        pytest.skip("MODELSEED_TEST_TOKEN is expired; rotate the GitHub Actions secret")
     return token
 
 

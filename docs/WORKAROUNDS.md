@@ -25,6 +25,25 @@ This document catalogs workarounds applied in the modelseed-api codebase. Each e
 
 ---
 
+## B. KBUtilLib ontology-data lookup
+
+**Applies to:** Both container images
+
+**Root cause:** The pinned KBUtilLib dependency manager does not consume the
+legacy `cb_annotation_ontology_api_path` constructor argument. When installed
+under site-packages, its fallback looks for `cb_annotation_ontology_api` beside
+the Python installation instead of using the checkout at `/deps`.
+
+**Workaround:** Both Dockerfiles create a compatibility symlink from
+`/usr/local/lib/python3.11/cb_annotation_ontology_api` to the pinned checkout at
+`/deps/cb_annotation_ontology_api`, then instantiate `BVBRCUtils` during the
+build to verify `FilteredReactions.csv` is readable.
+
+**Upstream:** KBUtilLib should accept an explicit dependency path or initialize
+its dependency manager from the supplied application configuration.
+
+---
+
 ## C. MSGapfill media=None crash guard
 
 **Applies to:** Both local and workspace modes

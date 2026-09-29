@@ -96,7 +96,7 @@ tests/
 
 | Layer | Marker | Auth | Jobs? | Wall-clock | Trigger |
 |---|---|---|---|---|---|
-| 1 — Smoke | `live_smoke` | Optional | No | ≤5 min | Pre-merge to main; every deploy; on-demand |
+| 1 - Smoke | `live_smoke` | Optional | No | <=5 min | Scheduled; after every deploy; on-demand |
 | 2 — Functional | `live_functional` | Required | No | 5–15 min | Nightly; on-demand before release |
 | 3 — Biological | `live_biological` | Required | Yes | 30–90 min | Weekly; on-demand before release; after solver/template change |
 | 4 — UI | `live_ui` | Required (cookie injection) | No | 10–20 min | Nightly; on-demand for UI changes |

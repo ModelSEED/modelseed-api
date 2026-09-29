@@ -49,9 +49,14 @@ COPY modelseed-api/data/ /app/data/
 COPY modelseed-api/pyproject.toml /app/
 RUN pip install --no-cache-dir -e ".[modeling,celery]"
 
+# KBUtilLib's current dependency-manager fallback searches beside the Python
+# installation even when an explicit ontology path is supplied.
+RUN ln -s /deps/cb_annotation_ontology_api /usr/local/lib/python3.11/cb_annotation_ontology_api
+
 # Keep the classifier runtime compatible with ModelSEEDpy's pinned sklearn.
-# Then pre-download classifier files so the first model build is fast.
+# Then verify KBUtilLib can resolve ontology data and pre-download the classifier.
 RUN pip install --no-cache-dir --force-reinstall "numpy<2" "scikit-learn==1.2.0" && \
+    python -c "from kbutillib import BVBRCUtils; BVBRCUtils(config_file=False, token_file=None, kbase_token_file=None, token={'patric': 'unused', 'kbase': 'unused'})" && \
     python -c "from modelseedpy.helpers import get_classifier; get_classifier('knn_ACNP_RAST_filter_01_17_2023')"
 
 # Environment configuration
