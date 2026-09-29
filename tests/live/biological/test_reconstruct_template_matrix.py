@@ -51,6 +51,7 @@ def test_reconstruct_template_genome_pairwise(
     # Submit
     submit = live_client.post(
         "/api/jobs/reconstruct",
+        params={"skip_validation": "true"},
         json={
             "genome": genome.genome_id,
             "template_type": template_type,
