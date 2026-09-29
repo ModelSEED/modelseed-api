@@ -98,18 +98,17 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -e ".[dev]"
-       - name: Run functional layer
-         env:
-           MODELSEED_TEST_ENV: ${{ inputs.target_env || 'production' }}
-           MODELSEED_TEST_TOKEN: ${{ secrets.MODELSEED_TEST_TOKEN }}
-         run: |
-           echo "::add-mask::$MODELSEED_TEST_TOKEN"
-           if [ -z "$MODELSEED_TEST_TOKEN" ]; then
-             echo "::warning::MODELSEED_TEST_TOKEN secret not set; functional tests will skip auth-required cases"
-           fi
-           mkdir -p tests/live/reports
-           pytest tests/live/functional/ -m live_functional --tb=short \
-
+      - name: Run functional layer
+        env:
+          MODELSEED_TEST_ENV: ${{ inputs.target_env || 'production' }}
+          MODELSEED_TEST_TOKEN: ${{ secrets.MODELSEED_TEST_TOKEN }}
+        run: |
+          echo "::add-mask::$MODELSEED_TEST_TOKEN"
+          if [ -z "$MODELSEED_TEST_TOKEN" ]; then
+            echo "::warning::MODELSEED_TEST_TOKEN secret not set; functional tests will skip auth-required cases"
+          fi
+          mkdir -p tests/live/reports
+          pytest tests/live/functional/ -m live_functional --tb=short \
             --html=tests/live/reports/functional.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/functional.json
       - name: Upload report
@@ -145,11 +144,10 @@ jobs:
           MODELSEED_TEST_TOKEN: ${{ secrets.MODELSEED_TEST_TOKEN }}
           MODELSEED_TEST_UI_ENABLED: '1'
           MODELSEED_TEST_UI_HEADLESS: '1'
-         run: |
-           echo "::add-mask::$MODELSEED_TEST_TOKEN"
-           mkdir -p tests/live/reports
-           pytest tests/live/ui/ -m live_ui --tb=short \
-
+        run: |
+          echo "::add-mask::$MODELSEED_TEST_TOKEN"
+          mkdir -p tests/live/reports
+          pytest tests/live/ui/ -m live_ui --tb=short \
             --html=tests/live/reports/ui.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/ui.json
       - name: Upload report
@@ -181,15 +179,14 @@ jobs:
         env:
           MODELSEED_TEST_ENV: ${{ inputs.target_env || 'production' }}
           MODELSEED_TEST_TOKEN: ${{ secrets.MODELSEED_TEST_TOKEN }}
-         run: |
-           echo "::add-mask::$MODELSEED_TEST_TOKEN"
-           if [ -z "$MODELSEED_TEST_TOKEN" ]; then
-             echo "::error::MODELSEED_TEST_TOKEN secret required for biological layer"
-             exit 1
-           fi
-           mkdir -p tests/live/reports
-           pytest tests/live/biological/ -m live_biological -n 4 --tb=short \
-
+        run: |
+          echo "::add-mask::$MODELSEED_TEST_TOKEN"
+          if [ -z "$MODELSEED_TEST_TOKEN" ]; then
+            echo "::error::MODELSEED_TEST_TOKEN secret required for biological layer"
+            exit 1
+          fi
+          mkdir -p tests/live/reports
+          pytest tests/live/biological/ -m live_biological -n 4 --tb=short \
             --html=tests/live/reports/biological.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/biological.json
       - name: Upload report
