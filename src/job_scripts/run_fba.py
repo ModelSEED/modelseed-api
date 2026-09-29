@@ -209,14 +209,17 @@ def main():
                 media_raw = resp.text
             # Parse media (TSV or JSON)
             media_compounds = []
+            media_parsed = False
             if isinstance(media_raw, str):
                 try:
                     media_obj = json.loads(media_raw)
                     if isinstance(media_obj, dict):
                         media_compounds = media_obj.get("mediacompounds", [])
+                        media_parsed = True
                 except (json.JSONDecodeError, TypeError):
                     # TSV format: id\tname\tconcentration\tminflux\tmaxflux
                     lines = media_raw.strip().split("\n")
+                    media_parsed = bool(lines and lines[0].count("\t") >= 4)
                     for line in lines[1:]:
                         cols = line.split("\t")
                         if len(cols) >= 5:
@@ -226,22 +229,23 @@ def main():
                             })
             elif isinstance(media_raw, dict):
                 media_compounds = media_raw.get("mediacompounds", [])
+                media_parsed = True
 
-            if media_compounds:
-                rxn_ids = {r.id for r in cobra_model.reactions}
-                medium = {}
-                for mc in media_compounds:
-                    cpd_id = mc.get("id") or mc.get("compound_ref", "").split("/")[-1]
-                    exc_rxn_id = f"EX_{cpd_id}_e0"
-                    if exc_rxn_id in rxn_ids:
-                        medium[exc_rxn_id] = mc.get("maxFlux", 100) or 1000.0
-                if medium:
-                    cobra_model.medium = medium
-                    print(f"Applied media: {len(medium)} exchange reactions open")
-                else:
-                    print("Warning: media had no matching exchange reactions")
+            if not media_parsed:
+                raise ValueError(f"Could not parse media: {ws_media_path}")
+
+            rxn_ids = {r.id for r in cobra_model.reactions}
+            medium = {}
+            for mc in media_compounds:
+                cpd_id = mc.get("id") or mc.get("compound_ref", "").split("/")[-1]
+                exc_rxn_id = f"EX_{cpd_id}_e0"
+                if exc_rxn_id in rxn_ids:
+                    medium[exc_rxn_id] = mc.get("maxFlux", 100) or 1000.0
+            cobra_model.medium = medium
+            if medium:
+                print(f"Applied media: {len(medium)} exchange reactions open")
             else:
-                print(f"Warning: could not parse media compounds from {ws_media_path}")
+                print("Applied empty media: all exchange reactions closed")
 
         # Run FBA
         update_job(job_file, {"progress": "Running FBA..."})

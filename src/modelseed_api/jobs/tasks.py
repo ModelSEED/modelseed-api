@@ -297,14 +297,17 @@ def _load_media(media_ref: str, token: str):
 
     # Parse media (JSON or TSV format)
     media_compounds = []
+    media_parsed = False
     if isinstance(raw, str):
         try:
             obj = json.loads(raw)
             if isinstance(obj, dict):
                 media_compounds = obj.get("mediacompounds", [])
+                media_parsed = True
         except (json.JSONDecodeError, TypeError):
             # TSV format: id\tname\tconcentration\tminflux\tmaxflux
             lines = raw.strip().split("\n")
+            media_parsed = bool(lines and lines[0].count("\t") >= 4)
             for line in lines[1:]:
                 cols = line.split("\t")
                 if len(cols) >= 5:
@@ -316,9 +319,10 @@ def _load_media(media_ref: str, token: str):
                     })
     elif isinstance(raw, dict):
         media_compounds = raw.get("mediacompounds", [])
+        media_parsed = True
 
-    if not media_compounds:
-        raise ValueError(f"No media compounds found in {media_ref}")
+    if not media_parsed:
+        raise ValueError(f"Could not parse media: {media_ref}")
 
     # Convert to MSMedia
     media_name = media_ref.rstrip("/").split("/")[-1]
@@ -374,11 +378,11 @@ def _apply_media(cobra_model, ms_media):
         exc_rxn_id = f"EX_{cpd.id}_e0"
         if exc_rxn_id in rxn_ids:
             medium[exc_rxn_id] = cpd.maxFlux or 1000.0
+    cobra_model.medium = medium
     if medium:
-        cobra_model.medium = medium
         logger.info("Applied media: %d exchange reactions open", len(medium))
     else:
-        logger.warning("Media had no matching exchange reactions — running with default bounds")
+        logger.info("Applied empty media: all exchange reactions closed")
 
 
 def _fix_gapfilling_metadata(ws_data: dict, media_workspace_ref: str | None) -> None:

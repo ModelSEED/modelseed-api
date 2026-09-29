@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelseed_api.jobs.tasks import _resolve_media_ref
+from modelseed_api.jobs.tasks import _apply_media, _load_media, _resolve_media_ref
 
 
 @pytest.mark.parametrize("media_ref", [
@@ -58,3 +58,55 @@ def test_resolve_media_ref_bare_name_goes_to_public_folder():
     result = _resolve_media_ref("NMS")
     assert result is not None
     assert result.endswith("/NMS")
+
+
+def test_load_media_accepts_existing_empty_media(monkeypatch):
+    pytest.importorskip("modelseedpy")
+
+    class Storage:
+        def get(self, params):
+            return [[params["objects"][0], {"mediacompounds": []}]]
+
+    monkeypatch.setattr(
+        "modelseed_api.services.storage_factory.get_storage_service",
+        lambda token: Storage(),
+    )
+
+    media = _load_media("/public/media/Empty", "token")
+
+    assert media.id == "Empty"
+    assert media.mediacompounds == []
+
+
+def test_load_media_rejects_unparseable_payload(monkeypatch):
+    pytest.importorskip("modelseedpy")
+
+    class Storage:
+        def get(self, params):
+            return [[params["objects"][0], "not media data"]]
+
+    monkeypatch.setattr(
+        "modelseed_api.services.storage_factory.get_storage_service",
+        lambda token: Storage(),
+    )
+
+    with pytest.raises(ValueError, match="Could not parse media"):
+        _load_media("/public/media/Broken", "token")
+
+
+def test_apply_empty_media_closes_all_exchanges():
+    cobra = pytest.importorskip("cobra")
+    modelseedpy = pytest.importorskip("modelseedpy")
+
+    model = cobra.Model("test")
+    extracellular = cobra.Metabolite("cpd00027_e0", compartment="e0")
+    exchange = cobra.Reaction("EX_cpd00027_e0")
+    exchange.add_metabolites({extracellular: -1})
+    exchange.bounds = (-1000, 1000)
+    model.add_reactions([exchange])
+    assert model.medium == {exchange.id: 1000}
+
+    _apply_media(model, modelseedpy.MSMedia("Empty"))
+
+    assert model.medium == {}
+    assert exchange.lower_bound == 0

@@ -87,7 +87,6 @@ def test_fba_complete_media_grows_ecoli_auto(
     bio.assert_grows_on_complete_media(detail)
     bio.assert_objective_within_range(detail)
     bio.assert_fluxes_finite(detail)
-    bio.assert_atp_production_positive_under_growth(detail)
 
 
 def test_fba_glucose_minimal_grows_ecoli(

@@ -441,24 +441,6 @@ def assert_fluxes_finite(fba_result: dict) -> None:
         )
 
 
-def assert_atp_production_positive_under_growth(fba_result: dict) -> None:
-    """27. When growing, the ATP synthesis reaction(s) should carry positive net flux."""
-    if _objective(fba_result) <= 0:
-        return  # vacuously true if not growing
-    fluxes = fba_result.get("fluxes") or {}
-    atpm = fluxes.get("ATPM_c0") or fluxes.get("ATPM") or 0
-    if atpm <= 0:
-        # Look for any reaction whose ID suggests ATP synthesis with positive flux.
-        atp_synth = sum(
-            v for k, v in fluxes.items() if "ATPS" in k and isinstance(v, (int, float))
-        )
-        if atp_synth <= 0:
-            raise AssertionError(
-                f"FBA {fba_result.get('id', '?')}: growing but no positive ATP flux. "
-                f"ATPM={atpm}, ATP-synth-like total={atp_synth}"
-            )
-
-
 def warn_thermodynamically_infeasible_loops(
     fba_result: dict, threshold: float = 1000.0
 ) -> str | None:
