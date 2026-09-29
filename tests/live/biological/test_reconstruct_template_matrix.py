@@ -102,7 +102,10 @@ def test_reconstruct_template_genome_pairwise(
         "ref": output_path,
         "reactions": cobra_resp.json().get("reactions", []),
     })
-    bio.assert_atp_maintenance_present(model)
+    bio.assert_atp_maintenance_present({
+        "ref": output_path,
+        "reactions": cobra_resp.json().get("reactions", []),
+    })
     bio.assert_compartment_pH_set(model)
 
     # Soft warnings — collect but don't fail

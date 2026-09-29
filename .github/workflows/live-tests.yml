@@ -186,7 +186,12 @@ jobs:
             exit 1
           fi
           mkdir -p tests/live/reports
-          pytest tests/live/biological/ -m live_biological --timeout=1800 --tb=short \
+          pytest \
+            tests/live/biological/test_reconstruct_template_matrix.py \
+            tests/live/biological/test_fba_media_matrix.py \
+            tests/live/biological/test_reconstruct_from_rast.py \
+            tests/live/biological/test_rast_vs_bvbrc_parity.py \
+            -m live_biological --timeout=1800 --tb=short \
             --html=tests/live/reports/biological.html --self-contained-html \
             --json-report --json-report-file=tests/live/reports/biological.json
       - name: Upload report

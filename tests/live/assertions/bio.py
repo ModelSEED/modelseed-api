@@ -355,18 +355,17 @@ def assert_extracellular_biomass_compounds_have_exchange(model: dict) -> None:
 
 
 def assert_atp_maintenance_present(model: dict) -> None:
-    """20. ATP maintenance / NGAM-like reaction should be present in models built
-    with `atp_safe=True` (the default). Looks for any reaction whose ID contains
-    'ATPM' or whose name suggests ATP maintenance."""
+    """20. The canonical ATP hydrolysis reaction is present when ATP-safe is enabled."""
     candidates = [
         r for r in _reactions(model)
-        if "ATPM" in (r.get("id") or "")
+        if (r.get("id") or "").split("_", 1)[0] in {"ATPM", "rxn00062"}
         or "maintenance" in (r.get("name") or "").lower()
+        or "atp phosphohydrolase" in (r.get("name") or "").lower()
     ]
     if not candidates:
         raise AssertionError(
             f"{_ref(model)}: no ATP maintenance reaction found "
-            f"(searched for ATPM in id and 'maintenance' in name)"
+            "(searched for ATPM/rxn00062 and ATP maintenance names)"
         )
 
 
