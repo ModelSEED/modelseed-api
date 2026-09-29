@@ -51,6 +51,7 @@ def test_demo_uses_deployment_prefix(
     demo = public_client.get("/demo/")
     assert_status(demo, 200)
     assert "ModelSEED API" in demo.text
+    assert 'href="../docs"' in demo.text
     assert "fetch(API + '/api/health')" in demo.text
 
     api_prefix = httpx.URL(target_env.api_url).path.rstrip("/")
