@@ -347,7 +347,13 @@ def main():
             ws = get_storage_service(args.token)
 
             import cobra.io
-            mdlutl.model.objective = "bio1"
+            reaction_ids = {r.id for r in mdlutl.model.reactions}
+            if "bio1" in reaction_ids:
+                mdlutl.model.objective = "bio1"
+            else:
+                bio_rxns = [r for r in mdlutl.model.reactions if r.id.startswith("bio")]
+                if bio_rxns:
+                    mdlutl.model.objective = bio_rxns[0].id
             cobra_json = json.dumps(cobra.io.model_to_dict(mdlutl.model))
 
             if not hasattr(mdlutl.model, 'get_data'):
