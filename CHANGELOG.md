@@ -4,6 +4,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Dates
 are the day a change landed on `main`, not necessarily the day it was
 deployed to production.
 
+## [Unreleased]
+
+### Fixed
+- `POST /api/jobs/reconstruct` now validates `genome_fasta` content and returns
+  HTTP 422 for compressed or binary uploads (e.g. a `.gz` file read as text),
+  a missing `>` header, non-sequence lines, or duplicate sequence IDs. These
+  previously dispatched a job that failed inside RAST with an opaque
+  `ServerError`. The same check runs in `annotate_fasta`, covering the MCP and
+  subprocess paths.
+
 ## [1.0.0] - 2026-09-23
 
 First tagged release since the initial `v0.1.0`. Consolidates roughly five

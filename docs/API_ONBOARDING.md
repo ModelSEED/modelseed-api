@@ -740,7 +740,7 @@ Builds a draft metabolic model from a BV-BRC genome (or directly from a protein 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `genome` | string | required, non-empty | BV-BRC genome ID (e.g., `"83332.12"`) — **or** a display name when `genome_fasta` is provided |
-| `genome_fasta` | string | null | DNA or protein FASTA content (auto-detected from sequence content). When set, the BV-BRC lookup is skipped and the model is built directly from these sequences (DNA is gene-called via prodigal + glimmer3, then annotated via RAST; protein sequences skip straight to annotation). |
+| `genome_fasta` | string | null | DNA or protein FASTA content (auto-detected from sequence content). When set, the BV-BRC lookup is skipped and the model is built directly from these sequences (DNA is gene-called via prodigal + glimmer3, then annotated via RAST; protein sequences skip straight to annotation). Must be plain-text FASTA: compressed (`.gz`, `.zip`) or binary content, a missing `>` header, non-sequence lines (e.g. GenBank), or duplicate sequence IDs are rejected with HTTP 422 before any job is dispatched. |
 | `template_type` | string | `"auto"` | Template selector. `"auto"` runs the genome classifier and picks `gn`/`gp`/`ar` automatically. Explicit values: `"gn"` / `"gramneg"` (gram-negative), `"gp"` / `"grampos"` (gram-positive), `"ar"` / `"archaea"` (archaeal). The Core template is no longer wired through this endpoint. |
 | `atp_safe` | bool | true | Apply ATP safety check |
 | `gapfill` | bool | false | Gapfill after reconstruction |

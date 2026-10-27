@@ -22,6 +22,8 @@ import time
 from modelseedpy.core.msgenome import MSFeature, MSGenome
 from modelseedpy.core.rpcclient import RPCClient
 
+from modelseed_api.services.fasta_validation import validate_fasta_text
+
 logger = logging.getLogger(__name__)
 
 RAST_URL = "https://tutorial.theseed.org/services/genome_annotation"
@@ -155,8 +157,9 @@ def annotate_fasta(
     annotation. Both use the same anonymous RAST endpoint and return
     the same MSGenome shape.
 
-    Raises ValueError if the FASTA is empty or RAST returns no features.
+    Raises ValueError if the FASTA is malformed or RAST returns no features.
     """
+    validate_fasta_text(fasta_str)
     records = _parse_fasta_records(fasta_str)
     if not records:
         raise ValueError("No sequences found in genome_fasta")

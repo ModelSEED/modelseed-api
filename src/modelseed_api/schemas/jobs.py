@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from modelseed_api.services.fasta_validation import validate_fasta_text
 
 
 # Valid template_type values. Mirrors TEMPLATE_FILES in jobs/tasks.py
@@ -86,6 +88,13 @@ class ReconstructionRequest(BaseModel):
     gapfill: bool = False
     media: Optional[str] = None
     output_path: Optional[str] = None
+
+    @field_validator("genome_fasta")
+    @classmethod
+    def _validate_genome_fasta(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            validate_fasta_text(v)
+        return v
 
     @model_validator(mode="after")
     def _validate_input_modes(self) -> "ReconstructionRequest":

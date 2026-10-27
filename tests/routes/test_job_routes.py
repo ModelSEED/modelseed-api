@@ -56,6 +56,17 @@ class TestReconstructJob:
         )
         assert resp.status_code == 200
 
+    def test_gzipped_fasta_rejected_before_dispatch(self, local_client, auth_headers):
+        # A browser reading a .gz upload as text: gzip magic + U+FFFD noise.
+        garbled = "\x1f\ufffd\x08\x08\ufffdFQXK01.1.fsa_nt\x00\ufffd>\ufffd\n\ufffd"
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "custom", "genome_fasta": garbled},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "gzip-compressed" in resp.text
+
 
 class TestGapfillJob:
     def test_dispatch(self, local_client, auth_headers):
