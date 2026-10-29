@@ -428,9 +428,9 @@ All settings load from environment variables with the `MODELSEED_` prefix or fro
 | `MODELSEED_RAST_DB_USER` | (empty) | RAST job database user |
 | `MODELSEED_RAST_DB_PASSWORD` | (empty) | RAST job database password |
 | `MODELSEED_RAST_DB_NAME` | `RastProdJobCache` | RAST job database name |
-| `MODELSEED_PLANTSEED_MCP_URL` | (empty) | PlantSEED MCP server URL for plant jobs. Empty disables them. |
-| `MODELSEED_PLANTSEED_MCP_TOKEN` | (empty) | Bearer token for the PlantSEED MCP server |
-| `MODELSEED_PLANTSEED_MCP_TIMEOUT` | `3600` | Seconds to wait for one PlantSEED tool call |
+| `MODELSEED_PLANTSEED_URL` | (empty) | PlantSEED service URL for plant jobs. Empty disables them (503 at submit). |
+| `MODELSEED_PLANTSEED_TOKEN` | (empty) | Bearer token for the PlantSEED service |
+| `MODELSEED_PLANTSEED_TIMEOUT` | `3600` | Seconds to wait for one PlantSEED tool call |
 | `MODELSEED_PLANTSEED_JOBS_DIR` | (empty) | Directory shared with the PlantSEED server, as the worker sees it |
 | `MODELSEED_PLANTSEED_SERVER_JOBS_DIR` | (empty) | The same directory as the PlantSEED server sees it (defaults to the worker's path) |
 | `MODELSEED_PLANTSEED_HOME_DIR` | `plantseed` | Workspace folder under `/<user>/` for plant models |

@@ -113,7 +113,7 @@ class TestToolResultParsing:
 
 class TestClientPaths:
     def test_requires_url_and_jobs_dir(self):
-        with pytest.raises(PlantSEEDServiceError, match="MCP_URL"):
+        with pytest.raises(PlantSEEDServiceError, match="PLANTSEED_URL"):
             PlantSEEDClient(url="", jobs_dir="/x")
         with pytest.raises(PlantSEEDServiceError, match="JOBS_DIR"):
             PlantSEEDClient(url="http://p/mcp", jobs_dir="")
@@ -293,3 +293,11 @@ def test_job_script_runs_workflow(tmp_path, monkeypatch):
     assert job["status"] == "completed"
     assert job["result"]["genome_id"] == "g"
     assert seen["query_species"] == "Gx" and seen["job_id"] == "j9"
+
+
+def test_root_cause_unwraps_exception_groups():
+    from modelseed_api.services.plantseed_client import _root_cause
+
+    leaf = ConnectionError("refused")
+    assert _root_cause(ExceptionGroup("outer", [ExceptionGroup("inner", [leaf])])) is leaf
+    assert _root_cause(leaf) is leaf

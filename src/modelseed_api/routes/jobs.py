@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from modelseed_api.auth.dependencies import AuthUser, get_current_user
 from modelseed_api.jobs.dispatcher import JobDispatcher
 from modelseed_api.jobs.store import JobStore
-from modelseed_api.schemas.errors import StructuredValidationError
+from modelseed_api.config import settings
+from modelseed_api.schemas.errors import StructuredValidationError, err_plantseed_unavailable
 from modelseed_api.schemas.jobs import (
     BulkReconstructionRequest,
     FBARequest,
@@ -115,6 +116,9 @@ async def reconstruct_model(
     Returns the job ID.
     """
     if request.template_type == "plant":
+        if not settings.plantseed_url:
+            err = err_plantseed_unavailable()
+            raise HTTPException(status_code=503, detail=err.model_dump())
         if not skip_validation:
             _run_preflight(
                 validate_output_path_under_user, request.output_path, user.username

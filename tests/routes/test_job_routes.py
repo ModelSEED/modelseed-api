@@ -73,8 +73,10 @@ class TestPlantReconstructJob:
 
     @pytest.fixture
     def dispatched(self, monkeypatch):
+        from modelseed_api.config import settings
         from modelseed_api.routes import jobs as job_routes
 
+        monkeypatch.setattr(settings, "plantseed_url", "http://plantseed-mcp:8931/mcp")
         calls = []
 
         def fake_dispatch(app, parameters, user, token):
@@ -147,6 +149,31 @@ class TestPlantReconstructJob:
         resp = self._post(local_client, auth_headers, output_path="/someoneelse/plantseed/x")
         assert resp.status_code == 403
         assert dispatched == []
+
+    def test_unconfigured_service_returns_503_without_dispatch(
+        self, local_client, auth_headers, dispatched, monkeypatch
+    ):
+        from modelseed_api.config import settings
+
+        monkeypatch.setattr(settings, "plantseed_url", "")
+        resp = self._post(local_client, auth_headers)
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["code"] == "PLANTSEED_UNAVAILABLE"
+        assert dispatched == []
+
+    def test_unconfigured_service_does_not_affect_microbial(
+        self, local_client, auth_headers, dispatched, monkeypatch
+    ):
+        from modelseed_api.config import settings
+
+        monkeypatch.setattr(settings, "plantseed_url", "")
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "custom", "genome_fasta": ">p\nMKKK"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert dispatched[0]["app"] == "ModelReconstruction"
 
     def test_dispatcher_maps_plant_app(self):
         from modelseed_api.jobs.dispatcher import JobDispatcher

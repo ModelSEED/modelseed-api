@@ -70,15 +70,17 @@ class Settings(BaseSettings):
     rast_jobs_dir: str = ""
 
     # PlantSEED annotation + reconstruction service (template_type="plant").
-    # The worker calls the plantseed MCP server's `annotate` and
-    # `reconstruct` tools. Those tools take and return file paths, so the
-    # worker and the server must share a directory: `plantseed_jobs_dir`
-    # is that directory as the worker sees it, `plantseed_server_jobs_dir`
-    # as the server sees it (leave empty when mounted at the same path).
-    # The server's PLANTSEED_OUTPUT_DIR must lie inside the shared directory.
-    plantseed_mcp_url: str = ""
-    plantseed_mcp_token: str = ""
-    plantseed_mcp_timeout: int = 3600
+    # Empty URL disables plant reconstruction: requests get a 503 at submit
+    # time and no job is dispatched (standalone deployments). The worker
+    # calls the service's `annotate` and `reconstruct` tools, which take and
+    # return file paths, so the worker and the service share a directory:
+    # `plantseed_jobs_dir` is that directory as the worker sees it,
+    # `plantseed_server_jobs_dir` as the service sees it (leave empty when
+    # mounted at the same path). The service's PLANTSEED_OUTPUT_DIR must lie
+    # inside the shared directory.
+    plantseed_url: str = ""
+    plantseed_token: str = ""
+    plantseed_timeout: int = 3600
     plantseed_jobs_dir: str = ""
     plantseed_server_jobs_dir: str = ""
     plantseed_home_dir: str = "plantseed"

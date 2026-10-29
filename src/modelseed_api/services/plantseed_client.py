@@ -35,7 +35,7 @@ class PlantSEEDClient:
     ):
         if not url:
             raise PlantSEEDServiceError(
-                "PlantSEED service is not configured (MODELSEED_PLANTSEED_MCP_URL is unset)"
+                "PlantSEED service is not configured (MODELSEED_PLANTSEED_URL is unset)"
             )
         if not jobs_dir:
             raise PlantSEEDServiceError(
@@ -51,9 +51,9 @@ class PlantSEEDClient:
     @classmethod
     def from_settings(cls) -> "PlantSEEDClient":
         return cls(
-            url=settings.plantseed_mcp_url,
-            token=settings.plantseed_mcp_token,
-            timeout=settings.plantseed_mcp_timeout,
+            url=settings.plantseed_url,
+            token=settings.plantseed_token,
+            timeout=settings.plantseed_timeout,
             jobs_dir=settings.plantseed_jobs_dir,
             server_jobs_dir=settings.plantseed_server_jobs_dir,
         )
@@ -86,28 +86,43 @@ class PlantSEEDClient:
         })
 
     def call_tool(self, name: str, arguments: dict) -> dict:
+        http_errors: list[str] = []
         try:
-            result = asyncio.run(self._call_tool(name, arguments))
+            result = asyncio.run(self._call_tool(name, arguments, http_errors))
         except PlantSEEDServiceError:
             raise
         except Exception as exc:
+            root = _root_cause(exc)
+            detail = f"HTTP {http_errors[0]}" if http_errors else f"{type(root).__name__}: {root}"
             raise PlantSEEDServiceError(
-                f"PlantSEED {name} call to {self.url} failed: {type(exc).__name__}: {exc}"
+                f"PlantSEED {name} call to {self.url} failed: {detail}"
             ) from exc
         return parse_tool_result(name, result)
 
-    async def _call_tool(self, name: str, arguments: dict):
+    async def _call_tool(self, name: str, arguments: dict, http_errors: list[str]):
         import httpx2
         from mcp import Client
         from mcp.client.streamable_http import streamable_http_client
 
+        async def _record(response):
+            if response.status_code >= 400:
+                http_errors.append(f"{response.status_code} {response.reason_phrase}".strip())
+
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
-        async with httpx2.AsyncClient(headers=headers, timeout=self.timeout) as http:
+        async with httpx2.AsyncClient(headers=headers, timeout=self.timeout,
+                                      event_hooks={"response": [_record]}) as http:
             transport = streamable_http_client(self.url, http_client=http)
             async with Client(transport, read_timeout_seconds=self.timeout) as client:
                 return await client.call_tool(
                     name, arguments, read_timeout_seconds=self.timeout
                 )
+
+
+def _root_cause(exc: BaseException) -> BaseException:
+    """The first leaf of nested exception groups (anyio wraps transport errors)."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    return exc
 
 
 def parse_tool_result(name: str, result) -> dict:
