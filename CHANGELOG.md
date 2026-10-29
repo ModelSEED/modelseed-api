@@ -6,6 +6,16 @@ deployed to production.
 
 ## [Unreleased]
 
+### Added
+- Plant reconstruction: `POST /api/jobs/reconstruct` with
+  `template_type: "plant"` and a protein `genome_fasta` annotates the
+  proteome with PlantSEED and builds a plant model (not gapfilled), saving the
+  annotated genome, the model and its cobra JSON under
+  `/<user>/plantseed/<genome>`. Runs as the new `PlantReconstruction` job
+  (`modelseed.plant_reconstruct`) by calling the PlantSEED MCP server; see
+  `docs/PLANT_RECONSTRUCT.md`.
+- `GET /api/models` with no `path` now also lists `/<user>/plantseed/`.
+
 ### Fixed
 - `POST /api/jobs/reconstruct` now validates `genome_fasta` content and returns
   HTTP 422 for compressed or binary uploads (e.g. a `.gz` file read as text),
