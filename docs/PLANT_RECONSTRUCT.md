@@ -68,13 +68,29 @@ directory:
 
 Per-job files are deleted when the job ends, whether it succeeded or failed.
 
+### Why a separate service, and why MCP
+
+A separate service rather than importing PlantSEED into the worker: the
+annotator needs `diamond` and `mafft` binaries and a 1.6 GB reference bundle
+that is versioned with PlantSEED's curation, not with modelseed-api. Keeping
+them in one PlantSEED-owned image means the worker image does not change when
+the curation or bundle does, and the code path is the one PlantSEED tests.
+
+MCP rather than a bespoke HTTP API: the PlantSEED image already serves MCP
+(the same server is used by AI agents, and the CDM Task Service lane runs the
+same image), so it is an existing, tested interface rather than a second one
+to maintain. To this worker it is just JSON over HTTP POST with a bearer
+token, through one small client (`services/plantseed_client.py`). If a plain
+REST endpoint is added to the PlantSEED image later, only that client
+changes.
+
 ## Configuration
 
 | Variable | Purpose |
 |---|---|
-| `MODELSEED_PLANTSEED_MCP_URL` | e.g. `http://plantseed-mcp:8931/mcp`. Unset makes plant jobs fail with a clear error. |
-| `MODELSEED_PLANTSEED_MCP_TOKEN` | The server's `PLANTSEED_MCP_TOKEN`. |
-| `MODELSEED_PLANTSEED_MCP_TIMEOUT` | Per-call timeout in seconds (default 3600). |
+| `MODELSEED_PLANTSEED_URL` | e.g. `http://plantseed-mcp:8931/mcp`. Unset disables plant reconstruction: `POST /api/jobs/reconstruct` with `template_type: "plant"` returns 503 `PLANTSEED_UNAVAILABLE` and dispatches nothing. |
+| `MODELSEED_PLANTSEED_TOKEN` | The service's `PLANTSEED_MCP_TOKEN`. |
+| `MODELSEED_PLANTSEED_TIMEOUT` | Per-call timeout in seconds (default 3600). |
 | `MODELSEED_PLANTSEED_JOBS_DIR` | Shared directory, worker's view. |
 | `MODELSEED_PLANTSEED_SERVER_JOBS_DIR` | Shared directory, server's view (optional). |
 | `MODELSEED_PLANTSEED_HOME_DIR` | Folder under `/<user>/` for plant models (default `plantseed`). |
@@ -82,21 +98,24 @@ Per-job files are deleted when the job ends, whether it succeeded or failed.
 The worker needs the `plantseed` extra (`pip install -e ".[plantseed]"`),
 which the production `Dockerfile` installs.
 
-Example server alongside the worker, sharing a named volume:
+## Deployment
 
-```bash
-docker run -d --name plantseed-mcp --network bioseed_network \
-  --read-only --tmpfs /tmp:rw,size=512m,mode=1777 \
-  -e PLANTSEED_MCP_TOKEN="$TOKEN" \
-  -e PLANTSEED_ANNOT_BUNDLE_DIR=/bundle \
-  -e PLANTSEED_OUTPUT_DIR=/shared/out \
-  -v /path/to/plantseed-refbuild-bundle:/bundle:ro \
-  -v plantseed-shared:/shared \
-  plantseed:dev
-```
+The hosted deployment runs the service as `plantseed-mcp` in the same
+compose project as the worker (ModelSEED/modelseed-api-ops
+`docker-compose.api.yml`, runbook section "PlantSEED service"). The shape
+of it:
 
-The worker then mounts `plantseed-shared:/shared` and sets
-`MODELSEED_PLANTSEED_JOBS_DIR=/shared`. The server runs as UID 10001 and
-the worker as root, so the server's output is readable by the worker and the
-worker's query files (0644 in a 0755 directory) are readable by the server.
-The shared directory itself must be writable by both.
+- `plantseed-mcp` has no host port; the worker reaches it by service name on
+  the compose network.
+- Both containers mount the same named volume at `/output`. The server uses
+  it as `PLANTSEED_OUTPUT_DIR`; the worker sets
+  `MODELSEED_PLANTSEED_JOBS_DIR=/output`.
+- The server runs as UID 10001, so the volume must be owned by 10001
+  (writable by the server, and by the worker as root). The ops compose does
+  this with a one-shot init container.
+- The server's MCP transport only answers Host names it is told about:
+  `PLANTSEED_MCP_ALLOWED_HOSTS=plantseed-mcp:*`. Otherwise a call by service
+  name gets `HTTP 421`.
+
+Standalone images leave `MODELSEED_PLANTSEED_URL` unset; plant requests then
+return 503 and nothing else changes.
