@@ -32,6 +32,25 @@ class TestListModels:
         assert len(result) >= 1
 
     @patch("modelseed_api.services.model_service.ModelService._lookup_genome_info", return_value=None)
+    def test_includes_plantseed_models(self, mock_lookup, model_svc, local_storage):
+        local_storage.create({"objects": [
+            ["/local/plantseed/Ptri", "modelfolder",
+             {"id": "Ptri", "source": "PlantSEED", "taxonomy": "Eukaryota", "domain": "Plant"},
+             ""],
+        ], "overwrite": 1})
+        models = model_svc.list_models(username="local")
+        assert any(m["id"] == "Ptri" and m["ref"].startswith("/local/plantseed/") for m in models)
+        assert any(m["ref"].startswith("/local/modelseed/") for m in models)
+
+    @patch("modelseed_api.services.model_service.ModelService._lookup_genome_info", return_value=None)
+    def test_explicit_path_lists_only_that_path(self, mock_lookup, model_svc, local_storage):
+        local_storage.create({"objects": [
+            ["/local/plantseed/Ptri", "modelfolder", {"id": "Ptri"}, ""],
+        ], "overwrite": 1})
+        refs = {m["ref"] for m in model_svc.list_models(path="/local/modelseed/")}
+        assert not any("/plantseed/" in r for r in refs)
+
+    @patch("modelseed_api.services.model_service.ModelService._lookup_genome_info", return_value=None)
     def test_model_stats_fields(self, mock_lookup, model_svc):
         result = model_svc.list_models(username="local")
         m = result[0]

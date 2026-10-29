@@ -1,0 +1,83 @@
+{
+ "features": [
+  {
+   "functions": [
+    "Uroporphyrinogen-III synthase (EC 4.2.1.75) # plastid"
+   ],
+   "id": "Potri.014G034700"
+  },
+  {
+   "functions": [
+    "Arginase (EC 3.5.3.1) # plastid # mitochondria"
+   ],
+   "id": "Potri.014G067700"
+  },
+  {
+   "functions": [
+    "UDP-glucuronate 4-epimerase (EC 5.1.3.6)"
+   ],
+   "id": "Potri.014G068400"
+  },
+  {
+   "functions": [
+    "NAD-dependent malic enzyme (EC 1.1.1.38) # mitochondria"
+   ],
+   "id": "Potri.014G079900"
+  },
+  {
+   "functions": [
+    "Glycerol-3-phosphate 2-O-acyltransferase (EC 2.3.1.198)"
+   ],
+   "id": "Potri.014G085500"
+  },
+  {
+   "functions": [
+    "Photosystem I PsaP # plastid"
+   ],
+   "id": "Potri.014G106400"
+  },
+  {
+   "functions": [
+    "NAD-dependent glyceraldehyde-3-phosphate dehydrogenase (EC 1.2.1.12) / NADPH-dependent glyceraldehyde-3-phosphate dehydrogenase (EC 1.2.1.13) # plastid"
+   ],
+   "id": "Potri.014G140500"
+  },
+  {
+   "functions": [
+    "Polygalacturonate 4-alpha-galacturonosyltransferase (EC 2.4.1.43)"
+   ],
+   "id": "Potri.014G142000"
+  },
+  {
+   "functions": [
+    "Fatty aldehyde decarbonylase (EC 4.1.99.-)"
+   ],
+   "id": "Potri.014G152301"
+  },
+  {
+   "functions": [
+    "Glucose-6-phosphate 1-dehydrogenase (EC 1.1.1.49) # plastid"
+   ],
+   "id": "Potri.014G166800"
+  },
+  {
+   "functions": [
+    "Acetyl-CoA acetyltransferase (EC 2.3.1.9) # cytosol"
+   ],
+   "id": "Potri.014G168700"
+  },
+  {
+   "functions": [
+    "Long-chain-fatty-acid--CoA ligase (EC 6.2.1.3) # endoplasm"
+   ],
+   "id": "Potri.014G169400"
+  },
+  {
+   "functions": [
+    "Succinyl-CoA ligase [ADP-forming] beta chain (EC 6.2.1.5) # mitochondria"
+   ],
+   "id": "Potri.014G195700"
+  }
+ ],
+ "id": "Ptrichocarpa_v4.1"
+}

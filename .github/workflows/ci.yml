@@ -35,7 +35,7 @@ jobs:
           python-version: '3.11'
           cache: pip
       - name: Install
-        run: pip install -e ".[dev,modeling,mcp]"
+        run: pip install -e ".[dev,modeling,mcp,plantseed]"
       - name: Run tests
         run: pytest tests/unit tests/routes tests/integration tests/e2e tests/test_mcp tests/test_auth.py -v
       - name: Lint

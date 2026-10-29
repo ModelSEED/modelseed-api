@@ -68,6 +68,120 @@ class TestReconstructJob:
         assert "gzip-compressed" in resp.text
 
 
+class TestPlantReconstructJob:
+    PROTEINS = ">Potri.001G000100.1.p\nMKVLAAGLLSTPQ\n>Potri.001G000200.1.p\nMSDEEKLR\n"
+
+    @pytest.fixture
+    def dispatched(self, monkeypatch):
+        from modelseed_api.config import settings
+        from modelseed_api.routes import jobs as job_routes
+
+        monkeypatch.setattr(settings, "plantseed_url", "http://plantseed-mcp:8931/mcp")
+        calls = []
+
+        def fake_dispatch(app, parameters, user, token):
+            calls.append({"app": app, "parameters": parameters, "user": user})
+            return "plant-job-id"
+
+        monkeypatch.setattr(job_routes._dispatcher, "dispatch", fake_dispatch)
+        return calls
+
+    def _post(self, client, headers, **body):
+        payload = {"genome": "Ptrichocarpa", "template_type": "plant",
+                   "genome_fasta": self.PROTEINS, **body}
+        return client.post("/api/jobs/reconstruct", json=payload, headers=headers)
+
+    def test_dispatches_plant_app(self, local_client, auth_headers, dispatched):
+        resp = self._post(local_client, auth_headers, query_species="Ptrichocarpa_v4.1")
+        assert resp.status_code == 200
+        assert resp.json() == "plant-job-id"
+        (call,) = dispatched
+        assert call["app"] == "PlantReconstruction"
+        assert call["parameters"] == {
+            "genome": "Ptrichocarpa",
+            "genome_fasta": self.PROTEINS,
+            "query_species": "Ptrichocarpa_v4.1",
+            "output_path": None,
+        }
+
+    def test_microbial_requests_still_use_model_reconstruction(
+        self, local_client, auth_headers, dispatched
+    ):
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "custom", "genome_fasta": ">p\nMKKK"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert dispatched[0]["app"] == "ModelReconstruction"
+
+    @pytest.mark.parametrize("body,message", [
+        ({"genome_fasta": None}, "requires genome_fasta"),
+        ({"rast_job_id": "1", "rast_genome_id": "2.1"}, "mutually exclusive"),
+        ({"query_species": "bad species!"}, "query_species"),
+    ])
+    def test_invalid_plant_requests_rejected(
+        self, local_client, auth_headers, dispatched, body, message
+    ):
+        resp = self._post(local_client, auth_headers, **body)
+        assert resp.status_code == 422
+        assert message in resp.text
+        assert dispatched == []
+
+    def test_gapfill_and_media_ignored(self, local_client, auth_headers, dispatched):
+        resp = self._post(local_client, auth_headers, gapfill=True, media="Complete")
+        assert resp.status_code == 200
+        (call,) = dispatched
+        assert call["app"] == "PlantReconstruction"
+        assert "gapfill" not in call["parameters"]
+        assert "media" not in call["parameters"]
+
+    def test_query_species_rejected_for_microbial(self, local_client, auth_headers, dispatched):
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "custom", "genome_fasta": ">p\nMKKK", "query_species": "Sp"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "only to template_type='plant'" in resp.text
+
+    def test_output_path_preflight_applies(self, local_client, auth_headers, dispatched):
+        resp = self._post(local_client, auth_headers, output_path="/someoneelse/plantseed/x")
+        assert resp.status_code == 403
+        assert dispatched == []
+
+    def test_unconfigured_service_returns_503_without_dispatch(
+        self, local_client, auth_headers, dispatched, monkeypatch
+    ):
+        from modelseed_api.config import settings
+
+        monkeypatch.setattr(settings, "plantseed_url", "")
+        resp = self._post(local_client, auth_headers)
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["code"] == "PLANTSEED_UNAVAILABLE"
+        assert dispatched == []
+
+    def test_unconfigured_service_does_not_affect_microbial(
+        self, local_client, auth_headers, dispatched, monkeypatch
+    ):
+        from modelseed_api.config import settings
+
+        monkeypatch.setattr(settings, "plantseed_url", "")
+        resp = local_client.post(
+            "/api/jobs/reconstruct?skip_validation=true",
+            json={"genome": "custom", "genome_fasta": ">p\nMKKK"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert dispatched[0]["app"] == "ModelReconstruction"
+
+    def test_dispatcher_maps_plant_app(self):
+        from modelseed_api.jobs.dispatcher import JobDispatcher
+
+        assert JobDispatcher.CELERY_TASK_MAP["PlantReconstruction"] == "modelseed.plant_reconstruct"
+        assert JobDispatcher.SCRIPT_MAP["PlantReconstruction"] == "plant_reconstruct.py"
+
+
 class TestGapfillJob:
     def test_dispatch(self, local_client, auth_headers):
         resp = local_client.post(

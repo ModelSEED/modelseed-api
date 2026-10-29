@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from modelseed_api.services.fasta_validation import validate_fasta_text
 
 
-# Valid template_type values. Mirrors TEMPLATE_FILES in jobs/tasks.py
+# Microbial template_type values. Mirrors TEMPLATE_FILES in jobs/tasks.py
 # (must stay in sync). "auto" triggers the genome classifier instead of
 # loading a specific template.
 _TEMPLATE_TYPE = Literal[
@@ -24,6 +24,19 @@ _TEMPLATE_TYPE = Literal[
     "gramneg",
     "ar",
     "archaea",
+]
+# Reconstruction also accepts "plant", which routes to the PlantSEED
+# pipeline (PlantReconstruction) instead of a ModelSEED template.
+_RECONSTRUCT_TEMPLATE_TYPE = Literal[
+    "auto",
+    "core",
+    "gn",
+    "gp",
+    "grampos",
+    "gramneg",
+    "ar",
+    "archaea",
+    "plant",
 ]
 # The same set without "auto", for endpoints (gapfill, fba) that need a
 # concrete template upfront.
@@ -77,17 +90,33 @@ class ReconstructionRequest(BaseModel):
 
     The `genome` field is required (BV-BRC ID or display name). When
     `genome_fasta` or `rast_job_id` is set, `genome` is just a label.
+
+    `template_type="plant"` selects the PlantSEED pipeline instead: it
+    requires a protein `genome_fasta` (the UI checks the sequence type),
+    annotates it against curated PlantSEED orthogroups, and saves both the
+    annotated genome and the model under `/<user>/plantseed/<genome>`.
+    `query_species` applies only to this mode. Plant models are not
+    gapfilled, so `gapfill` and `media` are ignored for plant requests.
     """
 
     genome: str = Field(min_length=1)
     genome_fasta: Optional[str] = None
     rast_job_id: Optional[str] = Field(default=None, min_length=1)
     rast_genome_id: Optional[str] = Field(default=None, min_length=1)
-    template_type: _TEMPLATE_TYPE = "auto"
+    template_type: _RECONSTRUCT_TEMPLATE_TYPE = "auto"
     atp_safe: bool = True
     gapfill: bool = False
     media: Optional[str] = None
     output_path: Optional[str] = None
+    query_species: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9_.\-]+$",
+        description=(
+            "Plant only: species label used to prefix gene IDs for "
+            "annotation (e.g. 'Ptrichocarpa_v4.1'). Defaults to `genome`."
+        ),
+    )
 
     @field_validator("genome_fasta")
     @classmethod
@@ -117,7 +146,21 @@ class ReconstructionRequest(BaseModel):
                 "rast_genome_id is required when rast_job_id is set "
                 "(the RAST genome ID inside the job, e.g. '85962.43')"
             )
+        if self.template_type == "plant":
+            self._validate_plant_mode()
+        elif self.query_species is not None:
+            raise ValueError("query_species applies only to template_type='plant'")
         return self
+
+    def _validate_plant_mode(self) -> None:
+        if self.genome_fasta is None:
+            raise ValueError(
+                "template_type='plant' requires genome_fasta (a protein FASTA)"
+            )
+        if self.rast_job_id is not None:
+            raise ValueError("rast_job_id cannot be used with template_type='plant'")
+        self.gapfill = False
+        self.media = None
 
 class GapfillRequest(BaseModel):
     """Request to gapfill a model."""

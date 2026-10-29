@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import requests
 
+from modelseed_api.config import settings
 from modelseed_api.services.storage_factory import get_storage_service
 
 
@@ -96,17 +97,27 @@ class ModelService:
         """List all models for a user.
 
         Replicates ProbModelSEED.list_models.
-        Default path: /{username}/modelseed/
+        Default: /{username}/modelseed/ plus /{username}/plantseed/ (plant
+        models; a missing plantseed folder is skipped).
         Returns ModelStats-shaped dicts from workspace modelfolder metadata.
         """
-        if not path:
+        if path:
+            listings = [(path, self.ws.ls({"paths": [path]}))]
+        else:
             path = f"/{username}/modelseed/"
-
-        result = self.ws.ls({"paths": [path]})
+            listings = [(path, self.ws.ls({"paths": [path]}))]
+            plant_path = f"/{username}/{settings.plantseed_home_dir}/"
+            try:
+                listings.append((plant_path, self.ws.ls({"paths": [plant_path]})))
+            except Exception:
+                pass
 
         models = []
-        if result and path in result:
-            for obj_meta in result[path]:
+        seen: set[tuple[str, str]] = set()
+        for listed_path, result in listings:
+            if not result or listed_path not in result:
+                continue
+            for obj_meta in result[listed_path]:
                 # obj_meta is workspace tuple:
                 # [name, type, path, creation_time, id, owner, size, user_meta, auto_meta, ...]
                 if len(obj_meta) < 8:
@@ -133,8 +144,9 @@ class ModelService:
                 # Deduplicate: workspace can return the same object under
                 # different names (e.g. ".name" and "name") or types
                 model_id = user_meta.get("id", obj_meta[0])
-                if any(m["id"] == model_id for m in models):
+                if (listed_path, model_id) in seen:
                     continue
+                seen.add((listed_path, model_id))
                 models.append(
                     {
                         "id": user_meta.get("id", obj_meta[0]),
