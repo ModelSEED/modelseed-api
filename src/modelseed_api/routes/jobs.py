@@ -108,8 +108,30 @@ async def reconstruct_model(
     workspace media ref). Synchronous 4xx is returned for catchable
     user errors instead of dispatching a doomed job.
 
+    `template_type="plant"` dispatches a PlantReconstruction job instead:
+    PlantSEED annotation of the protein FASTA followed by plant model
+    reconstruction, saving the genome and model under /<user>/plantseed/.
+
     Returns the job ID.
     """
+    if request.template_type == "plant":
+        if not skip_validation:
+            _run_preflight(
+                validate_output_path_under_user, request.output_path, user.username
+            )
+        params = {
+            "genome": request.genome,
+            "genome_fasta": request.genome_fasta,
+            "query_species": request.query_species,
+            "output_path": request.output_path,
+        }
+        return _dispatcher.dispatch(
+            app="PlantReconstruction",
+            parameters=params,
+            user=user.username,
+            token=user.token,
+        )
+
     if not skip_validation:
         _run_preflight(validate_output_path_under_user, request.output_path, user.username)
         if not request.genome_fasta and not request.rast_job_id:
