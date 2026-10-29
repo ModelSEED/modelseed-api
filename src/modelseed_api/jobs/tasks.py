@@ -1489,3 +1489,37 @@ def bulk_reconstruct(
         job_id=job_id,
         progress_cb=_cb,
     )
+
+
+@app.task(bind=True, name="modelseed.plant_reconstruct")
+def plant_reconstruct(
+    self,
+    token: str,
+    genome: str,
+    genome_fasta: str,
+    query_species: str | None = None,
+    output_path: str | None = None,
+    **_ignored,
+):
+    """Annotate a plant proteome with PlantSEED and build its model.
+
+    The workflow lives in `services.plant_reconstruction` so the
+    subprocess job script can reuse it. Plant models are not gapfilled;
+    any microbial-only options in the request are ignored.
+    """
+    from modelseed_api.services.plant_reconstruction import run_plant_reconstruct
+
+    job_id = getattr(self.request, "id", "") or "manual"
+
+    def _cb(msg: str) -> None:
+        self.update_state(state="PROGRESS", meta={"status": msg})
+
+    return run_plant_reconstruct(
+        token=token,
+        genome=genome,
+        genome_fasta=genome_fasta,
+        query_species=query_species,
+        output_path=output_path,
+        job_id=job_id,
+        progress_cb=_cb,
+    )
