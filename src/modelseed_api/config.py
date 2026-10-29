@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # poplar deployment sets this to "/vol/rast-prod/jobs" via .env.
     rast_jobs_dir: str = ""
 
+    # Workspace folder under /<user>/ holding plant models (ProbModelSEED's
+    # plantseed_home_dir).
+    plantseed_home_dir: str = "plantseed"
+
     # Timeouts
     workspace_timeout: int = 1800  # 30 minutes (matching existing client)
 
