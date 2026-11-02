@@ -189,3 +189,15 @@ def err_plantseed_unavailable() -> StructuredError:
         ),
         field="template_type",
     )
+
+
+def err_gapfill_plant_model(model_ref: str) -> StructuredError:
+    return StructuredError(
+        code="GAPFILL_NOT_SUPPORTED_FOR_PLANT",
+        message=f"Model '{model_ref}' is a PlantSEED plant model; gapfilling is not supported for plant models.",
+        hint=(
+            "Gapfilling uses microbial templates and would add microbial "
+            "reactions to a plant model. Run FBA on the model directly."
+        ),
+        field="model",
+    )

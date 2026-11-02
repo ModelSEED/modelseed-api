@@ -88,3 +88,18 @@ def validate_fasta_text(text: str) -> None:
             f"genome_fasta has duplicate sequence IDs: {shown}{more}. "
             "Each '>' header must start with a unique ID."
         )
+
+
+def looks_like_dna(fasta_str: str) -> bool:
+    """Heuristic: >=90% of non-header chars are ACGTUN (case-insensitive)."""
+    seq_chars = [
+        c
+        for line in fasta_str.splitlines()
+        if not line.startswith(">")
+        for c in line.strip()
+        if not c.isspace()
+    ]
+    if not seq_chars:
+        return False
+    nt_chars = sum(1 for c in seq_chars if c.upper() in "ACGTUN")
+    return nt_chars / len(seq_chars) >= 0.9

@@ -155,8 +155,18 @@ def _ensure_home_folder(ws, username: str, home: str) -> None:
         ws.create({"objects": [[f"/{username}/{home}", "folder", {}, ""]]})
 
 
-def _cleanup(*paths: Path) -> None:
+def _cleanup(root: Path, *paths: Path) -> None:
+    """Remove per-run directories, but only ones strictly inside `root`.
+
+    The run directories come partly from paths the PlantSEED server
+    returns; never delete the shared directory itself or anything outside it.
+    """
+    root = root.resolve()
     for p in paths:
+        p = p.resolve()
+        if p == root or root not in p.parents:
+            logger.warning("Not cleaning up %s: not strictly inside %s", p, root)
+            continue
         try:
             shutil.rmtree(p)
         except OSError:
@@ -307,7 +317,7 @@ def run_plant_reconstruct(
         except Exception as e:
             logger.warning("Failed to update folder metadata for %s: %s", output_path, e)
     finally:
-        _cleanup(*run_dirs)
+        _cleanup(client.jobs_dir, *run_dirs)
 
     return {
         "status": "success",

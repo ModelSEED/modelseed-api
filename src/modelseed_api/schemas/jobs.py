@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from modelseed_api.services.fasta_validation import validate_fasta_text
+from modelseed_api.services.fasta_validation import looks_like_dna, validate_fasta_text
 
 
 # Microbial template_type values. Mirrors TEMPLATE_FILES in jobs/tasks.py
@@ -92,7 +92,7 @@ class ReconstructionRequest(BaseModel):
     `genome_fasta` or `rast_job_id` is set, `genome` is just a label.
 
     `template_type="plant"` selects the PlantSEED pipeline instead: it
-    requires a protein `genome_fasta` (the UI checks the sequence type),
+    requires a protein `genome_fasta` (DNA is rejected with 422),
     annotates it against curated PlantSEED orthogroups, and saves both the
     annotated genome and the model under `/<user>/plantseed/<genome>`.
     `query_species` applies only to this mode. Plant models are not
@@ -156,6 +156,11 @@ class ReconstructionRequest(BaseModel):
         if self.genome_fasta is None:
             raise ValueError(
                 "template_type='plant' requires genome_fasta (a protein FASTA)"
+            )
+        if looks_like_dna(self.genome_fasta):
+            raise ValueError(
+                "template_type='plant' requires protein sequences; genome_fasta "
+                "looks like DNA. Upload the predicted proteome (.faa)."
             )
         if self.rast_job_id is not None:
             raise ValueError("rast_job_id cannot be used with template_type='plant'")

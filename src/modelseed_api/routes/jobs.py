@@ -25,6 +25,7 @@ from modelseed_api.services.preflight import (
     validate_genome_exists,
     validate_media_exists,
     validate_model_exists,
+    validate_not_plant_model,
     validate_output_path_under_user,
 )
 
@@ -174,10 +175,14 @@ async def gapfill_model(
     """Dispatch gapfilling to a job script.
 
     Pre-flight: validates model exists in workspace; validates media
-    (if provided as a workspace path).
+    (if provided as a workspace path). PlantSEED plant models are rejected
+    with 422 (always by path; by folder metadata unless skip_validation).
 
     Returns the job ID.
     """
+    _run_preflight(
+        validate_not_plant_model, request.model, None if skip_validation else user.token
+    )
     if not skip_validation:
         _run_preflight(validate_model_exists, request.model, user.token)
         if request.media:

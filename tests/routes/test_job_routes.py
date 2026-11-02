@@ -117,6 +117,7 @@ class TestPlantReconstructJob:
 
     @pytest.mark.parametrize("body,message", [
         ({"genome_fasta": None}, "requires genome_fasta"),
+        ({"genome_fasta": ">contig1\nACGTACGTACGTACGTAACCGGTT\n"}, "looks like DNA"),
         ({"rast_job_id": "1", "rast_genome_id": "2.1"}, "mutually exclusive"),
         ({"query_species": "bad species!"}, "query_species"),
     ])
@@ -183,6 +184,39 @@ class TestPlantReconstructJob:
 
 
 class TestGapfillJob:
+    def test_plant_model_rejected_by_path(self, local_client, auth_headers):
+        resp = local_client.post(
+            "/api/jobs/gapfill?skip_validation=true",
+            json={"model": "/testuser/plantseed/Ptrichocarpa"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "GAPFILL_NOT_SUPPORTED_FOR_PLANT"
+
+    def test_plant_model_rejected_by_folder_metadata(self, local_client, auth_headers):
+        from modelseed_api.services.storage_factory import get_storage_service
+
+        get_storage_service("t").create({"objects": [
+            ["/testuser/modelseed/MyPoplar", "modelfolder",
+             {"id": "MyPoplar", "source": "PlantSEED", "plantseed": "1"}, ""],
+            ["/testuser/modelseed/MyPoplar/model", "model", {}, "{}"],
+        ], "overwrite": 1})
+        resp = local_client.post(
+            "/api/jobs/gapfill",
+            json={"model": "/testuser/modelseed/MyPoplar"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "GAPFILL_NOT_SUPPORTED_FOR_PLANT"
+
+    def test_fba_on_plant_model_still_allowed(self, local_client, auth_headers):
+        resp = local_client.post(
+            "/api/jobs/fba?skip_validation=true",
+            json={"model": "/testuser/plantseed/Ptrichocarpa"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+
     def test_dispatch(self, local_client, auth_headers):
         resp = local_client.post(
             "/api/jobs/gapfill?skip_validation=true",

@@ -301,3 +301,39 @@ def test_root_cause_unwraps_exception_groups():
     leaf = ConnectionError("refused")
     assert _root_cause(ExceptionGroup("outer", [ExceptionGroup("inner", [leaf])])) is leaf
     assert _root_cause(leaf) is leaf
+
+
+class TestCleanupGuard:
+    def test_removes_only_dirs_strictly_inside_root(self, tmp_path):
+        root = tmp_path / "shared"
+        inside = root / "out" / "mcp" / "run-1"
+        inside.mkdir(parents=True)
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+
+        pr._cleanup(root, inside, root, outside, root / "out" / ".." / "..")
+
+        assert not inside.exists()
+        assert root.exists() and (root / "out").exists()
+        assert outside.exists()
+
+    def test_server_path_resolving_to_shared_root_is_kept(self, tmp_path, local_storage):
+        """A server returning a file directly in the shared dir must not get
+        the shared dir itself deleted."""
+        jobs = tmp_path / "shared"
+
+        class RootWriter(StubPlantSEED):
+            def call_tool(self, name, arguments):
+                payload = super().call_tool(name, arguments)
+                if name == "annotate":
+                    src = self.to_local_path(payload["genome_path"])
+                    (self.jobs_dir / "annotated_genome.json").write_text(src.read_text())
+                    payload["genome_path"] = "/shared/annotated_genome.json"
+                return payload
+
+        pr.run_plant_reconstruct(
+            token=TOKEN, genome="Ptri", genome_fasta=_fasta_for(_genome_fixture()),
+            client=RootWriter(jobs),
+        )
+        assert jobs.exists()
+        assert (jobs / "annotated_genome.json").exists()

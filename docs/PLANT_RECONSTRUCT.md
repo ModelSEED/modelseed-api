@@ -19,12 +19,14 @@ model from that annotation. It replaces the legacy ProbModelSEED
 | Field | Required | Notes |
 |---|---|---|
 | `genome` | yes | Display name. Its sanitized form is the model ID and folder name. |
-| `genome_fasta` | yes | Protein FASTA. The UI checks that it is protein before submitting. A `<species>\|\|` prefix on headers is accepted and replaced. |
+| `genome_fasta` | yes | Protein FASTA; DNA is rejected with 422 (the UI also checks before submitting). A `<species>\|\|` prefix on headers is accepted and replaced. |
 | `query_species` | no | Label used to prefix gene IDs during annotation. Defaults to the sanitized `genome`. |
 | `output_path` | no | Defaults to `/<user>/plantseed/<genome>`. |
 
 Plant models are not gapfilled: `gapfill` and `media` are ignored for plant
-requests. `rast_job_id` is rejected for plant requests and `query_species`
+requests, and `POST /api/jobs/gapfill` on a plant model returns 422
+`GAPFILL_NOT_SUPPORTED_FOR_PLANT` (detected by the `/plantseed/` path or the
+folder's `plantseed`/`source` metadata). FBA on plant models is allowed. `rast_job_id` is rejected for plant requests and `query_species`
 for microbial ones. The job is
 dispatched as app `PlantReconstruction` (Celery task
 `modelseed.plant_reconstruct`, subprocess script `plant_reconstruct.py`).
@@ -66,7 +68,8 @@ directory:
 - If the directory is mounted at different paths in the two containers, set
   `MODELSEED_PLANTSEED_SERVER_JOBS_DIR` to the server's path.
 
-Per-job files are deleted when the job ends, whether it succeeded or failed.
+Per-job files are deleted when the job ends, whether it succeeded or failed;
+only directories strictly inside the shared directory are ever removed.
 
 ### Why a separate service, and why MCP
 

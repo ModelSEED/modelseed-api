@@ -15,6 +15,8 @@ deployed to production.
   (`modelseed.plant_reconstruct`) by calling the PlantSEED MCP server; see
   `docs/PLANT_RECONSTRUCT.md`.
 - `GET /api/models` with no `path` now also lists `/<user>/plantseed/`.
+- `POST /api/jobs/gapfill` rejects PlantSEED plant models with 422
+  `GAPFILL_NOT_SUPPORTED_FOR_PLANT`.
 
 ### Fixed
 - `POST /api/jobs/reconstruct` now validates `genome_fasta` content and returns
