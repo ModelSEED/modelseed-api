@@ -62,6 +62,10 @@ celery = [
 mcp = [
     "fastmcp>=2.0.0",
 ]
+# Client for the PlantSEED MCP server (template_type="plant" jobs).
+plantseed = [
+    "mcp>=2.1,<3",
+]
 
 [project.scripts]
 modelseed-mcp = "modelseed_mcp.server:main"

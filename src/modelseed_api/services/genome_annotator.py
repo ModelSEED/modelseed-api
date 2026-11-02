@@ -22,7 +22,7 @@ import time
 from modelseedpy.core.msgenome import MSFeature, MSGenome
 from modelseedpy.core.rpcclient import RPCClient
 
-from modelseed_api.services.fasta_validation import validate_fasta_text
+from modelseed_api.services.fasta_validation import looks_like_dna, validate_fasta_text
 
 logger = logging.getLogger(__name__)
 
@@ -106,21 +106,6 @@ def _parse_fasta_records(fasta_str: str) -> list[tuple[str, str]]:
     if current_id is not None:
         records.append((current_id, "".join(current_seq)))
     return [r for r in records if r[0] and r[1]]
-
-
-def looks_like_dna(fasta_str: str) -> bool:
-    """Heuristic: >=90% of non-header chars are ACGTUN (case-insensitive)."""
-    seq_chars = [
-        c
-        for line in fasta_str.splitlines()
-        if not line.startswith(">")
-        for c in line.strip()
-        if not c.isspace()
-    ]
-    if not seq_chars:
-        return False
-    nt_chars = sum(1 for c in seq_chars if c.upper() in "ACGTUN")
-    return nt_chars / len(seq_chars) >= 0.9
 
 
 def _build_msgenome(annotated: dict) -> MSGenome:

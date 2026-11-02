@@ -28,6 +28,7 @@ import logging
 
 from modelseed_api.schemas.errors import (
     StructuredValidationError,
+    err_gapfill_plant_model,
     err_genome_not_found,
     err_media_not_found,
     err_model_not_found,
@@ -69,6 +70,34 @@ def validate_model_exists(model_ref: str, token: str) -> None:
         raise
     if not result:
         raise StructuredValidationError(404, err_model_not_found(model_ref))
+
+
+def validate_not_plant_model(model_ref: str, token: str | None = None) -> None:
+    """Reject gapfill on a PlantSEED model (422).
+
+    Plant models live under `/<user>/plantseed/` and their modelfolder
+    carries `plantseed: "1"` / `source: PlantSEED`. The path check needs no
+    workspace call; with a token, the folder metadata is checked too, which
+    catches a plant model saved under a custom output_path.
+    """
+    from modelseed_api.config import settings
+
+    ref = model_ref.rstrip("/")
+    if f"/{settings.plantseed_home_dir}/" in f"{ref}/":
+        raise StructuredValidationError(422, err_gapfill_plant_model(model_ref))
+    if token is None:
+        return
+
+    from modelseed_api.services.storage_factory import get_storage_service
+
+    parent, name = ref.rsplit("/", 1)
+    listing = get_storage_service(token).ls({"paths": [parent + "/"]}) or {}
+    for entry in next(iter(listing.values()), []):
+        if entry[0] == name and len(entry) > 7 and isinstance(entry[7], dict):
+            meta = entry[7]
+            if str(meta.get("plantseed", "")) == "1" or meta.get("source") == "PlantSEED":
+                raise StructuredValidationError(422, err_gapfill_plant_model(model_ref))
+            return
 
 
 def validate_media_exists(media_ref: str, token: str) -> None:

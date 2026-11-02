@@ -176,3 +176,28 @@ def err_output_path_not_owned(output_path: str, namespace: str) -> StructuredErr
         ),
         field="output_path",
     )
+
+
+def err_plantseed_unavailable() -> StructuredError:
+    return StructuredError(
+        code="PLANTSEED_UNAVAILABLE",
+        message="Plant reconstruction is not available on this server.",
+        hint=(
+            "The PlantSEED service is not configured here "
+            "(MODELSEED_PLANTSEED_URL is unset). Use a ModelSEED deployment "
+            "that provides it, or build a microbial model instead."
+        ),
+        field="template_type",
+    )
+
+
+def err_gapfill_plant_model(model_ref: str) -> StructuredError:
+    return StructuredError(
+        code="GAPFILL_NOT_SUPPORTED_FOR_PLANT",
+        message=f"Model '{model_ref}' is a PlantSEED plant model; gapfilling is not supported for plant models.",
+        hint=(
+            "Gapfilling uses microbial templates and would add microbial "
+            "reactions to a plant model. Run FBA on the model directly."
+        ),
+        field="model",
+    )

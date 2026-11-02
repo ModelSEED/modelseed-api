@@ -29,6 +29,7 @@ class JobDispatcher:
         "GapfillModel": "gapfill.py",
         "FluxBalanceAnalysis": "run_fba.py",
         "BulkModelReconstruction": "bulk_reconstruct.py",
+        "PlantReconstruction": "plant_reconstruct.py",
     }
 
     # Maps app names to Celery task names
@@ -37,6 +38,7 @@ class JobDispatcher:
         "GapfillModel": "modelseed.gapfill",
         "FluxBalanceAnalysis": "modelseed.fba",
         "BulkModelReconstruction": "modelseed.bulk_reconstruct",
+        "PlantReconstruction": "modelseed.plant_reconstruct",
     }
 
     def __init__(self, store: JobStore):

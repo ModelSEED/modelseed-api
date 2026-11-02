@@ -97,7 +97,7 @@ Most endpoints require a PATRIC token in the `Authorization` header (not needed 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/jobs` | Check job statuses (supports `ids` filter and status filters) |
-| `POST` | `/api/jobs/reconstruct` | Build a metabolic model from a BV-BRC genome ID, a FASTA upload, or a RAST job ID |
+| `POST` | `/api/jobs/reconstruct` | Build a metabolic model from a BV-BRC genome ID, a FASTA upload, or a RAST job ID; `template_type: "plant"` annotates a plant proteome with PlantSEED instead (see [`docs/PLANT_RECONSTRUCT.md`](docs/PLANT_RECONSTRUCT.md)) |
 | `POST` | `/api/jobs/bulk_reconstruct` | Build models for many genomes in one job (see [`docs/BULK_RECONSTRUCT.md`](docs/BULK_RECONSTRUCT.md)) |
 | `POST` | `/api/jobs/gapfill` | Gapfill a model against a media condition |
 | `POST` | `/api/jobs/fba` | Run flux balance analysis |
@@ -428,6 +428,12 @@ All settings load from environment variables with the `MODELSEED_` prefix or fro
 | `MODELSEED_RAST_DB_USER` | (empty) | RAST job database user |
 | `MODELSEED_RAST_DB_PASSWORD` | (empty) | RAST job database password |
 | `MODELSEED_RAST_DB_NAME` | `RastProdJobCache` | RAST job database name |
+| `MODELSEED_PLANTSEED_URL` | (empty) | PlantSEED service URL for plant jobs. Empty disables them (503 at submit). |
+| `MODELSEED_PLANTSEED_TOKEN` | (empty) | Bearer token for the PlantSEED service |
+| `MODELSEED_PLANTSEED_TIMEOUT` | `3600` | Seconds to wait for one PlantSEED tool call |
+| `MODELSEED_PLANTSEED_JOBS_DIR` | (empty) | Directory shared with the PlantSEED server, as the worker sees it |
+| `MODELSEED_PLANTSEED_SERVER_JOBS_DIR` | (empty) | The same directory as the PlantSEED server sees it (defaults to the worker's path) |
+| `MODELSEED_PLANTSEED_HOME_DIR` | `plantseed` | Workspace folder under `/<user>/` for plant models |
 
 
 ## Project structure

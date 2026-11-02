@@ -47,7 +47,7 @@ RUN pip install --no-cache-dir -e /deps/cobrakbase && \
 COPY modelseed-api/src/ /app/src/
 COPY modelseed-api/data/ /app/data/
 COPY modelseed-api/pyproject.toml /app/
-RUN pip install --no-cache-dir -e ".[modeling,celery]"
+RUN pip install --no-cache-dir -e ".[modeling,celery,plantseed]"
 
 # KBUtilLib's current dependency-manager fallback searches beside the Python
 # installation even when explicit data paths are supplied.
